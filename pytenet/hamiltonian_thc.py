@@ -9,11 +9,19 @@ import copy
 from scipy import sparse
 import pickle
 
-def get_smallest_mpo_qn(upper_index, op_value,  X_mo, L):
+def get_smallest_mpo_qn(upper_index, op_value, X_mo):
     
-    #get elementary thc-mpo
-    #the qnumber for elementary thc-mpo consisting of creation op has qD= [0, 1]
-    #the qnumber for elementary thc-mpo consisting of anihilation op has qD= [0, -1]
+    '''  
+    get elementary thc-mpo, in the form of mpo
+    the qnumber for elementary thc-mpo consisting of creation op has qD= [0, 1]
+    the qnumber for elementary thc-mpo consisting of anihilation op has qD= [0, -1]
+    op value: 0 for annihilation
+    op value: 1 for creation
+    upper_index: X_mo has two indices, one for site, one for thc-rank. Upper_index stands for mu/nu in thc-rank.
+    for spinor system, the X_mo here should be one of X_mo_up or X_mo_down
+    '''
+    
+    L = X_mo.shape[1]
     qd = np.array([0, 1])
     #Pauli matrices:
     I2 = np.identity(2)
