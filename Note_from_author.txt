@@ -1,0 +1,3 @@
+This fork repo is for algorithms using tensor hypercontraction.
+The previous codes for the paper is hard to read and there are too many deprecated codes.
+The motivation of this new fork is to create easy-read codes, and add more functions (like qnumber) to THC. 
