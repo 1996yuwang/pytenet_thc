@@ -7,7 +7,7 @@ import copy
 from scipy import sparse
 import pickle
 
-def get_smallest_mpo_qn(upper_index, op_value,  X_mo, L):
+def get_elementary_mpo_qn(upper_index, op_value,  X_mo, L):
     
     #set size for "simple" MPO
     qd = np.array([0, 1])

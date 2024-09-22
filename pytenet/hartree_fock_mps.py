@@ -9,7 +9,7 @@ def create_0_mps(bond_set, dir):
     '''
     d = 2
     D = bond_set
-    qd = np.zeros(d, dtype=int)
+    qd = np.array([0, 1])
     qD = [np.zeros(Di, dtype=int) for Di in D]
 
     A = MPS(qd, qD, fill=0.)
@@ -28,11 +28,14 @@ def generate_single_state(L, state):
     mps_single = create_0_mps(bond_set_1, 'left')
 
     for i in range (L):
-        if state[i] == 1:
-            (mps_single.A[i])[1] = 1
-            (mps_single.A[i])[0] = 0
+        
         if state[i] == 0:
             (mps_single.A[i])[1] = 0
             (mps_single.A[i])[0] = 1
+            
+        if state[i] == 1:
+            mps_single.qD[i+1] = 1
+            (mps_single.A[i])[1] = 1
+            (mps_single.A[i])[0] = 0
     
     return mps_single
