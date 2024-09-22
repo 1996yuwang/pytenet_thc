@@ -22,3 +22,6 @@ from .krylov          import *
 from .minimization    import *
 from .evolution       import *
 from .util            import *
+from .hamiltonian_thc            import *
+from .hamiltonian_thc_old        import *
+from .hartree_fock_mps           import *

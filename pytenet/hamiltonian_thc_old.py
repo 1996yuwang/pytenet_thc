@@ -7,22 +7,27 @@ import copy
 from scipy import sparse
 import pickle
 
-def get_smallest_mpo_qn(upper_index, op_value,  X_mo, L):
+def get_smallest_MPO(upper_index, op_value,  X_mo, L):
     
     #set size for "simple" MPO
-    qd = np.array([0, 1])
-    #qD = [np.array([0]), np.array([0, -1]) for i in range(L-1), np.array([-1])]
+    d = 2
+    qd = np.zeros(d, dtype=int)
+    
+    DO = [1] + [2] * (L - 1) + [1]
+    qDO = [np.zeros(Di, dtype=int) for Di in DO]
+    
     #Pauli matrices:
     I2 = np.identity(2)
     bose_c = np.array([[0, 0.],[1, 0]])
     bose_a = np.array([[0, 1.],[0, 0]])
+    #bose_n = np.array([[0, 0.],[0, 1]])
     pauli_Z = np.array([[1, 0.],[0, -1]])
     
+    #mpo = ptn.MPO(qd, qDO, fill='random')
+    mpo = MPO(qd, qDO, fill= 0.)
+
     #annihilation
     if op_value == 0:
-        
-        qD = [np.array([0])] + [np.array([0, -1]) for i in range(L-1)] + [np.array([-1])]
-        mpo = MPO(qd, qD, fill= 0.)
 
         mpo.A[0][:, :, 0, 0] = pauli_Z
         mpo.A[0][:, :, 0, 1] = bose_a * X_mo[upper_index, 0]
@@ -38,10 +43,7 @@ def get_smallest_mpo_qn(upper_index, op_value,  X_mo, L):
 
     #creation
     if op_value == 1:
-        
-        qD = [np.array([0])] + [np.array([0, 1]) for i in range(L-1)] + [np.array([1])]
-        mpo = MPO(qd, qD, fill= 0.)
-        
+
         mpo.A[0][:, :, 0, 0] = pauli_Z
         mpo.A[0][:, :, 0, 1] = bose_c * X_mo[upper_index, 0]
 
