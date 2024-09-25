@@ -1,0 +1,85 @@
+import numpy as np
+
+def get_h1_spin(h1):
+    
+    nmo = h1.shape[0]
+    
+    h1_upup = np.zeros([2*h1.shape[0], 2*h1.shape[1]], dtype = h1.dtype)
+    h1_dd = np.zeros([2*h1.shape[0], 2*h1.shape[1]], dtype = h1.dtype)
+
+    for i in range (nmo):
+        for j in range (nmo):
+            h1_upup[2*i, 2*j] = h1[i, j]
+
+    for i in range (nmo):
+        for j in range (nmo):
+            h1_dd[2*i+1, 2*j+1] = h1[i, j]
+
+    h1_spin = h1_upup + h1_dd
+    
+    return(h1_spin)
+
+def get_g_spin(g_mo):
+    
+    nmo = g_mo.shape[0]
+    
+    g_spin = np.zeros([2*nmo, 2*nmo, 2*nmo, 2*nmo], dtype = g_mo.dtype)
+
+    for p in range(2*nmo):
+        for q in range(2*nmo):
+            for r in range(2*nmo):
+                for s in range(2*nmo):
+                    if p%2 == q%2:
+                        if r%2 == s%2:
+                            g_spin[p,q,r,s] = g_mo[p//2, q//2, r//2, s//2]
+                            
+    return(g_spin)
+    
+    
+def get_t_spin(h1, g_mo):
+
+    nmo = g_mo.shape[0]
+    
+    g_trace_temp = np.zeros([nmo, nmo])
+    for p in range (nmo):
+        for s in range (nmo):
+            for i in range (nmo):
+                g_trace_temp[p, s] += g_mo[p, i, i, s] 
+                
+    t = h1 - 0.5 * g_trace_temp
+
+    t_upup = np.zeros([2*t.shape[0], 2*t.shape[1]], dtype = t.dtype)
+    t_dd = np.zeros([2*t.shape[0], 2*t.shape[1]], dtype = t.dtype)
+
+    for i in range (nmo):
+        for j in range (nmo):
+            t_upup[2*i, 2*j] = t[i, j]
+
+    for i in range (nmo):
+        for j in range (nmo):
+            t_dd[2*i+1, 2*j+1] = t[i, j]
+
+    t_spin = t_upup + t_dd
+    
+    return(t_spin)
+
+def get_X_up(X_mo):
+    r_THC = X_mo.shape[0]
+    nmo = X_mo.shape[1]
+    X_mo_up = np.zeros([X_mo.shape[0], 2*X_mo.shape[1]], dtype = X_mo.dtype)
+    for i in range (r_THC):
+        for j in range (nmo):
+            X_mo_up[i, 2*j] = X_mo[i, j]
+            
+    return X_mo_up
+
+
+def get_X_down(X_mo):
+    r_THC = X_mo.shape[0]
+    nmo = X_mo.shape[1]
+    X_mo_down = np.zeros([X_mo.shape[0], 2*X_mo.shape[1]], dtype = X_mo.dtype)
+    for i in range (r_THC):
+        for j in range (nmo):
+            X_mo_down[i, 2*j + 1] = X_mo[i, j]
+    
+    return X_mo_down

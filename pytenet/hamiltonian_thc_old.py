@@ -7,6 +7,9 @@ import copy
 from scipy import sparse
 import pickle
 
+#this file is old codes, which is used a reference of new codes, and will be deleted in the future.
+
+
 def get_smallest_MPO(upper_index, op_value,  X_mo, L):
     
     #set size for "simple" MPO
@@ -57,3 +60,23 @@ def get_smallest_MPO(upper_index, op_value,  X_mo, L):
             mpo.A[i][:, :, 1, 1] = I2
 
     return mpo
+
+def get_four_layers_spin(mu, nu, X_mo_spin_up, X_mo_spin_down, Z_mo, L, spin1, spin2):
+    
+    if spin1 == 0:
+        H1 = get_smallest_MPO(nu, 0, X_mo_spin_up, L)
+        H2 = get_smallest_MPO(nu, 1, X_mo_spin_up, L)
+    if spin1 == 1:
+        H1 = get_smallest_MPO(nu, 0, X_mo_spin_down, L)
+        H2 = get_smallest_MPO(nu, 1, X_mo_spin_down, L)
+
+    if spin2 == 0:
+        H3 = get_smallest_MPO(mu, 0, X_mo_spin_up, L)
+        H4 = get_smallest_MPO(mu, 1, X_mo_spin_up, L)
+    if spin2 == 1:
+        H3 = get_smallest_MPO(mu, 0, X_mo_spin_down, L)
+        H4 = get_smallest_MPO(mu, 1, X_mo_spin_down, L)
+        
+    H4.A[0] = Z_mo[mu, nu] * H4.A[0]
+        
+    return [H1, H2, H3, H4] #H_mu_nu = H4@H3@H2@H1

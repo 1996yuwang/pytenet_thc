@@ -9,10 +9,18 @@ import pickle
 
 def get_elementary_mpo_qn(upper_index, op_value,  X_mo, L):
     
-    #set size for "simple" MPO
+    '''  
+    get elementary thc-mpo, in the form of mpo
+    the qnumber for elementary thc-mpo consisting of creation op has qD= [0, 1]
+    the qnumber for elementary thc-mpo consisting of anihilation op has qD= [0, -1]
+    op value: 0 for annihilation
+    op value: 1 for creation
+    upper_index: X_mo has two indices, one for site, one for thc-rank. Upper_index stands for mu/nu in thc-rank.
+    for spinor system, the X_mo here should be one of X_mo_up or X_mo_down
+    qn stands for quantum number, which means this func considers the qn
+    '''
     qd = np.array([0, 1])
-    #qD = [np.array([0]), np.array([0, -1]) for i in range(L-1), np.array([-1])]
-    #Pauli matrices:
+
     I2 = np.identity(2)
     bose_c = np.array([[0, 0.],[1, 0]])
     bose_a = np.array([[0, 1.],[0, 0]])
@@ -55,3 +63,182 @@ def get_elementary_mpo_qn(upper_index, op_value,  X_mo, L):
             mpo.A[i][:, :, 1, 1] = I2
 
     return mpo
+
+
+def get_four_layers_spin_qn(mu, nu, X_mo_spin_up, X_mo_spin_down, Z_mo, L, spin1, spin2):
+    ''' 
+    generate all four mpo layers for a sub-Hamiltonian
+    the scaler \zeta_{\mu,\nu} is absorbed into the top layer
+    the H1 in this func is the mpo on the bottom
+    '''
+    if spin1 == 0:
+        H1 = get_elementary_mpo_qn(nu, 0, X_mo_spin_up, L)
+        H2 = get_elementary_mpo_qn(nu, 1, X_mo_spin_up, L)
+    if spin1 == 1:
+        H1 = get_elementary_mpo_qn(nu, 0, X_mo_spin_down, L)
+        H2 = get_elementary_mpo_qn(nu, 1, X_mo_spin_down, L)
+
+    if spin2 == 0:
+        H3 = get_elementary_mpo_qn(mu, 0, X_mo_spin_up, L)
+        H4 = get_elementary_mpo_qn(mu, 1, X_mo_spin_up, L)
+    if spin2 == 1:
+        H3 = get_elementary_mpo_qn(mu, 0, X_mo_spin_down, L)
+        H4 = get_elementary_mpo_qn(mu, 1, X_mo_spin_down, L)
+        
+    H4.A[0] = Z_mo[mu, nu] * H4.A[0]
+        
+    return [H1, H2, H3, H4] #H_mu_nu = H4@H3@H2@H1
+
+
+
+def get_h1_spin(h1):
+    #note: h1 from pyscf uses chemist's notation
+    #input: the kinetic term h1, as a 2d matrix of shape (nmo, nmo)
+    #return: corresponding matrix considering the spins, of shape (2nmo, 2nmo)
+    nmo = h1.shape[0]
+    
+    h1_upup = np.zeros([2*h1.shape[0], 2*h1.shape[1]], dtype = h1.dtype)
+    h1_dd = np.zeros([2*h1.shape[0], 2*h1.shape[1]], dtype = h1.dtype)
+
+    for i in range (nmo):
+        for j in range (nmo):
+            h1_upup[2*i, 2*j] = h1[i, j]
+
+    for i in range (nmo):
+        for j in range (nmo):
+            h1_dd[2*i+1, 2*j+1] = h1[i, j]
+
+    h1_spin = h1_upup + h1_dd
+    
+    return(h1_spin)
+
+def get_g_spin(g_mo):
+    #note: g from pyscf uses chemist's notation
+    #input: the Coulomb term g, as a 4-d tensor of shape (nmo, nmo, nmo, nmo)
+    #return: corresponding tensor considering the spins, of shape (2nmo, 2nmo, 2nmo, 2nmo)
+    #physicist's notation:h1_spin and g_spin.transpose(0, 2, 1, 3)
+    #chemist's notation: h1_spin and g_spin
+    #<even more...> paper notation: t1_spin (later) and g_spin
+     
+    nmo = g_mo.shape[0]
+    
+    g_spin = np.zeros([2*nmo, 2*nmo, 2*nmo, 2*nmo], dtype = g_mo.dtype)
+
+    for p in range(2*nmo):
+        for q in range(2*nmo):
+            for r in range(2*nmo):
+                for s in range(2*nmo):
+                    if p%2 == q%2:
+                        if r%2 == s%2:
+                            g_spin[p,q,r,s] = g_mo[p//2, q//2, r//2, s//2]
+                            
+    return(g_spin) 
+    
+    
+def get_t_spin(h1, g_mo):
+    
+    #<even more...> paper notation: t1_spin (later) and g_spin
+    
+    nmo = g_mo.shape[0]
+    
+    g_trace_temp = np.zeros([nmo, nmo])
+    for p in range (nmo):
+        for s in range (nmo):
+            for i in range (nmo):
+                g_trace_temp[p, s] += g_mo[p, i, i, s] 
+                
+    t = h1 - 0.5 * g_trace_temp
+
+    t_upup = np.zeros([2*t.shape[0], 2*t.shape[1]], dtype = t.dtype)
+    t_dd = np.zeros([2*t.shape[0], 2*t.shape[1]], dtype = t.dtype)
+
+    for i in range (nmo):
+        for j in range (nmo):
+            t_upup[2*i, 2*j] = t[i, j]
+
+    for i in range (nmo):
+        for j in range (nmo):
+            t_dd[2*i+1, 2*j+1] = t[i, j]
+
+    t_spin = t_upup + t_dd
+    
+    return(t_spin)
+
+def get_X_up(X_mo):
+    r_THC = X_mo.shape[0]
+    nmo = X_mo.shape[1]
+    X_mo_up = np.zeros([X_mo.shape[0], 2*X_mo.shape[1]], dtype = X_mo.dtype)
+    for i in range (r_THC):
+        for j in range (nmo):
+            X_mo_up[i, 2*j] = X_mo[i, j]
+            
+    return X_mo_up
+
+
+def get_X_down(X_mo):
+    r_THC = X_mo.shape[0]
+    nmo = X_mo.shape[1]
+    X_mo_down = np.zeros([X_mo.shape[0], 2*X_mo.shape[1]], dtype = X_mo.dtype)
+    for i in range (r_THC):
+        for j in range (nmo):
+            X_mo_down[i, 2*j + 1] = X_mo[i, j]
+    
+    return X_mo_down
+
+def generate_thc_mpos_by_layer_qn(X_mo, Z_mo, L, t_spin):
+    
+    X_mo_up = get_X_up(X_mo)
+    X_mo_down = get_X_down(X_mo)
+    r_THC = X_mo.shape[0]
+    L = 2*X_mo.shape[1]
+    
+    H_mu_nu_list_spin_layer = []
+    for mu in range(r_THC):
+        for nu in range(r_THC):
+            for s1 in range(2):
+                for s2 in range(2):
+                    H_mu_nu_list_spin_layer.append(get_four_layers_spin_qn(mu, nu, X_mo_up, X_mo_down, 0.5*Z_mo, L, s1, s2))
+                    
+    H_mu_nu_list_spin_layer.append([molecular_hamiltonian_mpo(t_spin, np.zeros([L, L, L, L]))])
+    
+    return(H_mu_nu_list_spin_layer)
+
+
+def conjmat(M):
+    return np.conjugate(M.T)
+
+def eval_func(a, eri, hkin, hnuc, rcond = 1e-13):
+    no,m = a.shape
+    dic = {}
+    print(no)
+    print(a.shape)
+
+    MV = eri.reshape(no*no,no*no)
+    B = np.einsum('ix,jx->ijx', a, a)
+    MB = B.reshape(no**2,m)
+    Binv = np.linalg.pinv(MB,rcond=rcond)
+    W = Binv@MV@conjmat(Binv)
+    D = Binv@(hkin.flatten())
+    H = Binv@(hnuc.flatten())    
+    print(W.shape)
+
+
+    V_thc = MB @ W @ conjmat(MB)
+    errV = np.linalg.norm(MB @ W @ conjmat(MB) - MV)/np.linalg.norm(MV)
+    print("rl errV:", errV)
+    errV = np.linalg.norm(MB @ W @ conjmat(MB) - MV)
+    print("abs errV:", errV)
+
+    
+    errt = np.linalg.norm(a * D @ a.T - hkin)/np.linalg.norm(hkin)
+    print("errt:", errt)
+    errh = np.linalg.norm(a * H @ a.T - hnuc)/np.linalg.norm(hnuc)
+    print("errh:", errh)
+    errht = np.linalg.norm(a * (H+D) @ a.T - hnuc-hkin)/np.linalg.norm(hnuc+hkin)
+    print("errht:", errht)
+    dic["errV"] = errV
+    dic["errt"] = errt
+    dic["errh"] = errh
+    dic["errht"] = errht
+    
+    return V_thc, W
