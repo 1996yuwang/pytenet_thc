@@ -1,10 +1,11 @@
 from collections.abc import Sequence
 import numpy as np
 from .qnumber import qnumber_outer_sum, qnumber_flatten, is_qsparse
-from .bond_ops import qr, retained_bond_indices, split_matrix_svd, split_matrix_svd_max_bond
+from .bond_ops import qr, retained_bond_indices, split_matrix_svd
+from .bond_ops_max_bond import split_matrix_svd_max_bond
 from .util import crandn
 
-__all__ = ['MPS', 'merge_mps_tensor_pair', 'split_mps_tensor']
+#__all__ = ['MPS', 'merge_mps_tensor_pair', 'split_mps_tensor']
 
 
 class MPS:
@@ -440,6 +441,7 @@ def add_mps(mps0: MPS, mps1: MPS, alpha=1) -> MPS:
                 'sparsity pattern of MPS tensor does not match quantum numbers'
     return mps
 
+#added by Yu:
 def local_orthonormalize_left_svd_max_bond(A, Anext, qd: Sequence[int], qD: Sequence[Sequence[int]], tol: float, max_bond):
     """
     Left-orthonormalize the local site tensor `A` by a SVD,
