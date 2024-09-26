@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 import numpy as np
 from .qnumber import qnumber_outer_sum, qnumber_flatten, is_qsparse
-from .bond_ops import qr, retained_bond_indices, split_matrix_svd
+from .bond_ops import qr, retained_bond_indices, split_matrix_svd, split_matrix_svd_max_bond
 from .util import crandn
 
 __all__ = ['MPS', 'merge_mps_tensor_pair', 'split_mps_tensor']
@@ -158,6 +158,60 @@ class MPS:
             self.A[0] *= T[0, 0, 0] / abs(T[0, 0, 0])
             return (nrm, abs(T[0, 0, 0]))
         raise ValueError(f'mode = {mode} invalid; must be "left" or "right".')
+    
+    def compress_no_normalization_max_bond(self, tol: float, mode='left', max_bond = 10):
+        """
+        This compression doesn't work with normalized MPS. Mainly used for H|\psi> calculation, which is not normalzied.
+        
+        Note that we don't return the norm in this function, while self.compress() returns it.
+        
+        Note that, in compress considering normalization, one need to absorb T to make sure the whole MPS normalized, but
+        one don't have to do it for this version. 
+        
+        Compress and orthonormalize a MPS by site-local SVDs and singular value truncations.
+
+        Nothing returns.
+        
+        Attention: the tol here works on normalized matrix, thus the final error will be scaled by nrm!
+        """
+        if mode == 'left':
+            # transform to right-canonical form first
+            nrm = self.orthonormalize(mode='right')
+            # cancel the normalization in this step:
+            self.A[0] = nrm* self.A[0]
+            for i in range(len(self.A) - 1):
+                self.A[i], self.A[i+1], self.qD[i+1] = local_orthonormalize_left_svd_max_bond(self.A[i], self.A[i+1], self.qd, self.qD[i:i+2], tol, max_bond)
+                assert is_qsparse(self.A[i], [self.qd, self.qD[i], -self.qD[i+1]]), \
+                    'sparsity pattern of MPS tensor does not match quantum numbers'
+            # last tensor
+            self.A[-1], T, self.qD[-1] = local_orthonormalize_left_svd_max_bond(self.A[-1], np.array([[[1]]]), self.qd, self.qD[-2:], tol, max_bond)
+            assert is_qsparse(self.A[-1], [self.qd, self.qD[-2], -self.qD[-1]]), \
+                'sparsity pattern of MPS tensor does not match quantum numbers'
+    
+            self.A[-1] *= T[0, 0, 0]
+            #in the case tol is too high, the mps will be truncated to 0 
+            if T.shape != (1, 1, 1):
+                self = empty_mps(self.nsites)
+            
+        if mode == 'right':
+            # transform to left-canonical form first
+            nrm = self.orthonormalize(mode='left')
+            #cancel the normalization in this step:
+            self.A[0] = nrm* self.A[0]
+            for i in reversed(range(1, len(self.A))):
+                self.A[i], self.A[i-1], self.qD[i] = local_orthonormalize_right_svd_max_bond(self.A[i], self.A[i-1], self.qd, self.qD[i:i+2], tol, max_bond)
+                assert is_qsparse(self.A[i], [self.qd, self.qD[i], -self.qD[i+1]]), \
+                    'sparsity pattern of MPS tensor does not match quantum numbers'
+            # first tensor
+            self.A[0], T, self.qD[0] = local_orthonormalize_right_svd_max_bond(self.A[0], np.array([[[1]]]), self.qd, self.qD[:2], tol, max_bond)
+            assert is_qsparse(self.A[0], [self.qd, self.qD[0], -self.qD[1]]), \
+                'sparsity pattern of MPS tensor does not match quantum numbers'
+                
+            self.A[0] *= T[0, 0, 0]
+            #in the case tol is too high, the mps will be truncated to 0 
+            if T.shape != (1, 1, 1):
+                self = empty_mps(self.nsites)
+        #raise ValueError(f'mode = {mode} invalid; must be "left" or "right".')
 
     def as_vector(self) -> np.ndarray:
         """
@@ -204,6 +258,7 @@ class MPS:
         # include scalar factor in last MPS tensor
         mps.A[-1] *= v[0, 0]
         return mps
+    
 
     def __add__(self, other):
         """
@@ -286,7 +341,6 @@ def local_orthonormalize_right_svd(A, Aprev, qd: Sequence[int], qD: Sequence[Seq
     # update Aprev tensor: multiply with (U @ sigma) from right
     Aprev = np.tensordot(Aprev, U * sigma, (2, 0))
     return (A, Aprev, qbond)
-
 
 def merge_mps_tensor_pair(A0: np.ndarray, A1: np.ndarray) -> np.ndarray:
     """
@@ -384,4 +438,54 @@ def add_mps(mps0: MPS, mps1: MPS, alpha=1) -> MPS:
         for i in range(1, L):
             assert is_qsparse(mps.A[i], [mps.qd, mps.qD[i], -mps.qD[i+1]]), \
                 'sparsity pattern of MPS tensor does not match quantum numbers'
+    return mps
+
+def local_orthonormalize_left_svd_max_bond(A, Anext, qd: Sequence[int], qD: Sequence[Sequence[int]], tol: float, max_bond):
+    """
+    Left-orthonormalize the local site tensor `A` by a SVD,
+    and update the tensor at the next site.
+    """
+    # perform SVD and replace A by reshaped U matrix
+    s = A.shape
+    assert len(s) == 3
+    q0 = qnumber_flatten([qd, qD[0]])
+    U, sigma, V, qbond = split_matrix_svd_max_bond(A.reshape((s[0]*s[1], s[2])), q0, qD[1], tol, max_bond)
+    A = U.reshape((s[0], s[1], U.shape[1]))
+    # update Anext tensor: multiply with (sigma @ V) from left
+    Anext = np.tensordot(sigma[:, None] * V, Anext, (1, 1)).transpose((1, 0, 2))
+    return (A, Anext, qbond)
+
+
+def local_orthonormalize_right_svd_max_bond(A, Aprev, qd: Sequence[int], qD: Sequence[Sequence[int]], tol: float, max_bond):
+    """
+    Right-orthonormalize the local site tensor `A` by a SVD,
+    and update the tensor at the previous site.
+    """
+    # flip physical and left virtual bond dimension
+    A = A.transpose((1, 0, 2))
+    # perform SVD and replace A by reshaped V matrix
+    s = A.shape
+    assert len(s) == 3
+    q1 = qnumber_flatten([-qd, qD[1]])
+    U, sigma, V, qbond = split_matrix_svd_max_bond(A.reshape((s[0], s[1]*s[2])), qD[0], q1, tol, max_bond)
+    A = V.reshape((V.shape[0], s[1], s[2]))
+    # undo flip of physical and left virtual bond dimension
+    A = A.transpose((1, 0, 2))
+    # update Aprev tensor: multiply with (U @ sigma) from right
+    Aprev = np.tensordot(Aprev, U * sigma, (2, 0))
+    return (A, Aprev, qbond)
+
+    
+
+def empty_mps(L):
+    
+    #definr mps dimension using D_empty:
+    D_empty = []
+    for i in range (L+1):
+        D_empty.append (1)
+        qD_empty = [np.zeros(Di, dtype=int) for Di in D_empty]
+        mps = MPS(np.array([0, 1]), qD_empty, fill= 0)  
+
+    mps.qD = [np.zeros(Di, dtype=int) for Di in mps.bond_dims]   
+    
     return mps
