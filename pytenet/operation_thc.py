@@ -1,6 +1,7 @@
 import numpy as np
-from .operation import apply_operator, add_mps_and_compress, apply_operator_and_compress
+from .operation import apply_operator, add_mps_and_compress, apply_operator_and_compress, vdot
 import copy
+import pickle
 
 
 def get_h1_spin(h1):
@@ -100,7 +101,7 @@ def H_on_mps_compress_by_layer(H_mu_nu_by_layer, psi, tol, max_bond_layer):
     return temp
 
 
-def apply_thc_mpo_on_and_compress(sub_H_list_as_layer, psi, trunc_tol, max_bond_global, r_THC):
+def apply_thc_mpo_and_compress(sub_H_list_as_layer, psi, trunc_tol, max_bond_global, r_THC):
     #svd_small_count = 0
     psi_original = copy.deepcopy(psi)
     for nu in range (r_THC):
@@ -171,11 +172,67 @@ def apply_thc_mpo_on_and_compress(sub_H_list_as_layer, psi, trunc_tol, max_bond_
     Kinetic_on_psi = apply_operator_and_compress(sub_H_list_as_layer[-1][0], psi_original, trunc_tol, max_bond_global)                         
     H_on_psi = add_mps_and_compress(H_on_psi, Kinetic_on_psi, trunc_tol, max_bond_global) 
      
-    #wrong count and display here! 
-    #print('SVD error caught:', svd_small_count, 'for:', mu, nu, s1, s2, )
     return (H_on_psi)
 
 
 
 def find_indices_spin (mu, nu, s1 ,s2 ,r_THC):
     return (mu* 4* (r_THC) + nu* 4 + 2*s1 + s2)
+
+
+def generate_krylov_space_in_disk(N_Krylov, H_mu_nu_list_spin_layer, psi_original, max_bond_Krylov, trunc_tol, r_THC, foldername):  
+    filename = foldername + f"/Krylov_vec{0}.pkl"
+    with open(filename, 'wb') as file:
+        pickle.dump(copy.deepcopy(psi_original), file)
+
+    H_on_psi = apply_thc_mpo_and_compress(H_mu_nu_list_spin_layer, copy.deepcopy(psi_original), trunc_tol, max_bond_Krylov, r_THC)
+    #H_on_psi.orthonormalize('right')
+    #print(H_on_psi.bond_dims)
+
+    temp = copy.deepcopy(psi_original)
+    temp.A[0] = -vdot(H_on_psi, temp)* temp.A[0]
+    H_on_psi =  add_mps_and_compress(copy.deepcopy(H_on_psi), temp, trunc_tol, max_bond_Krylov)
+    #H_on_psi.orthonormalize('left')
+
+    filename = foldername + f"/Krylov_vec{1}.pkl"
+    with open(filename, 'wb') as file:
+        pickle.dump(H_on_psi, file)
+
+    for i in range (2, N_Krylov):
+            
+        if i % 5 == 0:
+            print("implemented:", i)
+            
+        filename = foldername + f"/Krylov_vec{i-2}.pkl"
+        with open(filename, 'rb') as file:
+            orth_state1 = pickle.load(file)
+        filename = foldername + f"/Krylov_vec{i-1}.pkl"
+        with open(filename, 'rb') as file:
+            orth_state2 = pickle.load(file)
+
+        this_state = (H_mu_nu_list_spin_layer, copy.deepcopy(orth_state2), trunc_tol, r_THC, max_bond_Krylov)
+        #this_state.orthonormalize('right')
+        #print(this_state.bond_dims)
+        
+        this_state = ortho_to_previous_two(orth_state1, orth_state2, this_state, max_bond_Krylov, trunc_tol)
+        
+        filename = foldername + f"/Krylov_vec{i}.pkl"
+        with open(filename, 'wb') as file:
+            pickle.dump(this_state, file)
+            
+            
+def ortho_to_previous_two(orth_state1, orth_state2, this_state, max_bond, trunc_tol_ortho):
+    #orthoglnolize to previous another two states, in MPS form 
+    
+    temp_state = copy.deepcopy(this_state)
+    
+    temp = copy.deepcopy(orth_state1)
+    temp.A[0] = -vdot(temp_state, temp)* temp.A[0]
+    this_state = add_mps_and_compress(copy.deepcopy(this_state), temp, trunc_tol_ortho, max_bond)
+    
+    temp = copy.deepcopy(orth_state2)
+    temp.A[0] = -vdot(temp_state, temp)* temp.A[0]
+    this_state =  add_mps_and_compress(copy.deepcopy(this_state), temp, trunc_tol_ortho, max_bond)
+    
+    #this_state.orthonormalize('left')
+    return(this_state)
