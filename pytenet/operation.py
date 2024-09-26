@@ -1,5 +1,5 @@
 import numpy as np
-from .mps import MPS
+from .mps import MPS, add_mps
 from .mpo import MPO
 from .qnumber import qnumber_flatten, is_qsparse
 
@@ -381,3 +381,32 @@ def apply_local_bond_contraction(L, R, C):
     # multiply L with T tensor
     T = np.tensordot(L, T, axes=((0, 1), (0, 1)))
     return T
+
+
+#added by Yu:
+
+def apply_operator_and_compress(op: MPO, psi: MPS, tol, max_bond_apply):
+    """
+    Apply an operator represented as MPO to a state in MPS form.
+    
+    And then compress it, with tol and maximum bond dims.
+    
+    See ptn.mps.local_orthonormalize_right_svd_max_bond for compression details.
+    """
+    # quantum numbers on physical sites must match
+    op_psi = apply_operator(op, psi)
+    #by default, mode = 'left' for the following line
+    op_psi.compress_no_normalization_max_bond(tol, max_bond = max_bond_apply)
+            
+    return op_psi
+
+def add_mps_and_compress(psi1: MPS, psi2: MPS, tol, max_bond_apply):
+    """
+    Add two MPS, and then compress it, with tol and maximum bond dims.
+    
+    See ptn.mps.local_orthonormalize_right_svd_max_bond for compression details.
+    """
+    psi = add_mps(psi1, psi2)
+    psi.compress_no_normalization_max_bond(tol, max_bond = max_bond_apply)
+
+    return psi
