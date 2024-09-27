@@ -480,8 +480,9 @@ def local_orthonormalize_right_svd_max_bond(A, Aprev, qd: Sequence[int], qD: Seq
     
 
 def empty_mps(L):
-    
-    #definr mps dimension using D_empty:
+    #return MPS whose entires are all zero. 
+    #L determines the system size.
+    #define mps dimension using D_empty:
     D_empty = []
     for i in range (L+1):
         D_empty.append (1)

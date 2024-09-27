@@ -165,6 +165,15 @@ def get_t_spin(h1, g_mo):
     return(t_spin)
 
 def get_X_up(X_mo):
+    ''' 
+    Used when considering each spinor orbital as an MPS site.
+    
+    Input: X_mo, e.g, \chi tensor in THC
+    
+    Output: \chi which helps to implement \sum_s^L \chi a_{s, spin_up}
+    
+    We set sites with even indices for up spins.
+    '''
     r_THC = X_mo.shape[0]
     nmo = X_mo.shape[1]
     X_mo_up = np.zeros([X_mo.shape[0], 2*X_mo.shape[1]], dtype = X_mo.dtype)
@@ -176,6 +185,15 @@ def get_X_up(X_mo):
 
 
 def get_X_down(X_mo):
+    ''' 
+    Used when considering each spinor orbital as an MPS site.
+    
+    Input: X_mo, e.g, \chi tensor in THC
+    
+    Output: \chi which helps to implement \sum_s^L \chi a_{s, spin_down}
+    
+    We set sites with odd indices for down spins.
+    '''
     r_THC = X_mo.shape[0]
     nmo = X_mo.shape[1]
     X_mo_down = np.zeros([X_mo.shape[0], 2*X_mo.shape[1]], dtype = X_mo.dtype)
@@ -186,6 +204,14 @@ def get_X_down(X_mo):
     return X_mo_down
 
 def generate_thc_mpos_by_layer_qn(X_mo, Z_mo, L, t_spin):
+    
+    '''  
+    Given: THC tensors, kinetic term t_spin, and system size L (actually unnecessary, since we can read it from t_spin).
+    
+    Output: a list containning MPOs for all sub-Hamiltonian H_mu_nu, as well as MPO for the kinectic term.
+    
+    For each sub-Hamiltonian H_mu_nu, it consists of four elementary MPOs, i.e.,  H_mu_nu_list_spin_layer[i] is also a list which contains four MPOs.
+    '''
     
     X_mo_up = get_X_up(X_mo)
     X_mo_down = get_X_down(X_mo)
@@ -208,6 +234,8 @@ def conjmat(M):
     return np.conjugate(M.T)
 
 def eval_func(a, eri, hkin, hnuc, rcond = 1e-13):
+    
+    
     no,m = a.shape
     dic = {}
     print(no)

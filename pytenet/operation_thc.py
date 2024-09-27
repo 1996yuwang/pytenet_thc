@@ -2,91 +2,9 @@ import numpy as np
 from .operation import apply_operator, add_mps_and_compress, apply_operator_and_compress, vdot
 import copy
 import pickle
+from scipy import sparse
 
 
-def get_h1_spin(h1):
-    
-    nmo = h1.shape[0]
-    
-    h1_upup = np.zeros([2*h1.shape[0], 2*h1.shape[1]], dtype = h1.dtype)
-    h1_dd = np.zeros([2*h1.shape[0], 2*h1.shape[1]], dtype = h1.dtype)
-
-    for i in range (nmo):
-        for j in range (nmo):
-            h1_upup[2*i, 2*j] = h1[i, j]
-
-    for i in range (nmo):
-        for j in range (nmo):
-            h1_dd[2*i+1, 2*j+1] = h1[i, j]
-
-    h1_spin = h1_upup + h1_dd
-    
-    return(h1_spin)
-
-def get_g_spin(g_mo):
-    
-    nmo = g_mo.shape[0]
-    
-    g_spin = np.zeros([2*nmo, 2*nmo, 2*nmo, 2*nmo], dtype = g_mo.dtype)
-
-    for p in range(2*nmo):
-        for q in range(2*nmo):
-            for r in range(2*nmo):
-                for s in range(2*nmo):
-                    if p%2 == q%2:
-                        if r%2 == s%2:
-                            g_spin[p,q,r,s] = g_mo[p//2, q//2, r//2, s//2]
-                            
-    return(g_spin)
-    
-    
-def get_t_spin(h1, g_mo):
-
-    nmo = g_mo.shape[0]
-    
-    g_trace_temp = np.zeros([nmo, nmo])
-    for p in range (nmo):
-        for s in range (nmo):
-            for i in range (nmo):
-                g_trace_temp[p, s] += g_mo[p, i, i, s] 
-                
-    t = h1 - 0.5 * g_trace_temp
-
-    t_upup = np.zeros([2*t.shape[0], 2*t.shape[1]], dtype = t.dtype)
-    t_dd = np.zeros([2*t.shape[0], 2*t.shape[1]], dtype = t.dtype)
-
-    for i in range (nmo):
-        for j in range (nmo):
-            t_upup[2*i, 2*j] = t[i, j]
-
-    for i in range (nmo):
-        for j in range (nmo):
-            t_dd[2*i+1, 2*j+1] = t[i, j]
-
-    t_spin = t_upup + t_dd
-    
-    return(t_spin)
-
-def get_X_up(X_mo):
-    r_THC = X_mo.shape[0]
-    nmo = X_mo.shape[1]
-    X_mo_up = np.zeros([X_mo.shape[0], 2*X_mo.shape[1]], dtype = X_mo.dtype)
-    for i in range (r_THC):
-        for j in range (nmo):
-            X_mo_up[i, 2*j] = X_mo[i, j]
-            
-    return X_mo_up
-
-
-def get_X_down(X_mo):
-    r_THC = X_mo.shape[0]
-    nmo = X_mo.shape[1]
-    X_mo_down = np.zeros([X_mo.shape[0], 2*X_mo.shape[1]], dtype = X_mo.dtype)
-    for i in range (r_THC):
-        for j in range (nmo):
-            X_mo_down[i, 2*j + 1] = X_mo[i, j]
-    
-    return X_mo_down
 
 def H_on_mps_compress_by_layer(H_mu_nu_by_layer, psi, tol, max_bond_layer):
     ''' 
@@ -102,7 +20,18 @@ def H_on_mps_compress_by_layer(H_mu_nu_by_layer, psi, tol, max_bond_layer):
 
 
 def apply_thc_mpo_and_compress(sub_H_list_as_layer, psi, trunc_tol, max_bond_global, r_THC):
-    #svd_small_count = 0
+    '''  
+    It is long, but actually doesn't contain too much information.
+    
+    Purpose: apply all THC-MPOs on state \psi, seperately. And add the results together. 
+    
+    Input: sub_H_list_as_layer: THC-MPO; psi: quantum state as MPS.
+    
+    Output: compressed H\psi> as MPS, implemented with THC-MPO.
+    
+    Why is this so long? What does try/ except do? In the case singular values are small, the SVD doesn't converge, so that we must truncate more. 
+    When the SVD convergence error occurs, we increase the trunc_tol. It only works when tunc_tol is not set as 0.
+    '''
     psi_original = copy.deepcopy(psi)
     for nu in range (r_THC):
         for s1 in range (2):
@@ -169,6 +98,7 @@ def apply_thc_mpo_and_compress(sub_H_list_as_layer, psi, trunc_tol, max_bond_glo
                                     except Exception:
                                         print("still fail for 4th attempt")
     
+    #The last step: apply kinetic term on \psi, and add it to the summation.
     Kinetic_on_psi = apply_operator_and_compress(sub_H_list_as_layer[-1][0], psi_original, trunc_tol, max_bond_global)                         
     H_on_psi = add_mps_and_compress(H_on_psi, Kinetic_on_psi, trunc_tol, max_bond_global) 
      
@@ -177,52 +107,80 @@ def apply_thc_mpo_and_compress(sub_H_list_as_layer, psi, trunc_tol, max_bond_glo
 
 
 def find_indices_spin (mu, nu, s1 ,s2 ,r_THC):
+    ''' 
+    Input: the four indices {mu, nu, spin1, spin2} for sub-Hamiltonian.
+    
+    Output: the index for MPO for sub-Hamiltonian, in the THC-MPO list.
+    '''
+
     return (mu* 4* (r_THC) + nu* 4 + 2*s1 + s2)
 
 
 def generate_krylov_space_in_disk(N_Krylov, H_mu_nu_list_spin_layer, psi_original, max_bond_Krylov, trunc_tol, r_THC, foldername):  
+    '''  
+    generate orthogonalized Krylov space, and store in disk.
+    
+    N_Krylov: the size of Krylov space.
+    
+    H_mu_nu_list_spin_layer: THC-MPO, as a list of MPOs.
+    
+    psi_original: initial state v_0 for Krylov methods.
+    
+    max_bond_Krylov: maximum bond dimension for Krylov vectors.
+    
+    foldername: one must input a foldername where the Krylov vectors are stored in.
+    '''
+    
+    # store the v_0 in disk
     filename = foldername + f"/Krylov_vec{0}.pkl"
     with open(filename, 'wb') as file:
         pickle.dump(copy.deepcopy(psi_original), file)
 
+    # H v_0 and orthogonalize it, then store in disk.
     H_on_psi = apply_thc_mpo_and_compress(H_mu_nu_list_spin_layer, copy.deepcopy(psi_original), trunc_tol, max_bond_Krylov, r_THC)
-    #H_on_psi.orthonormalize('right')
-    #print(H_on_psi.bond_dims)
+    H_on_psi.orthonormalize('right')
+    print(H_on_psi.bond_dims)
 
     temp = copy.deepcopy(psi_original)
     temp.A[0] = -vdot(H_on_psi, temp)* temp.A[0]
     H_on_psi =  add_mps_and_compress(copy.deepcopy(H_on_psi), temp, trunc_tol, max_bond_Krylov)
-    #H_on_psi.orthonormalize('left')
+    H_on_psi.orthonormalize('right')
 
     filename = foldername + f"/Krylov_vec{1}.pkl"
     with open(filename, 'wb') as file:
         pickle.dump(H_on_psi, file)
 
+    # from now on, all the H v_i should be orthogonalized to the previous two vectors.
     for i in range (2, N_Krylov):
-            
-        if i % 5 == 0:
-            print("implemented:", i)
-            
+        
+        #show how many Krylov vectors are achieved     
+        print(i)    
+        # if i % 5 == 0:
+        #     print("implemented:", i)
+        
+        #from disk load the previous two Krylov vectors.    
         filename = foldername + f"/Krylov_vec{i-2}.pkl"
         with open(filename, 'rb') as file:
             orth_state1 = pickle.load(file)
         filename = foldername + f"/Krylov_vec{i-1}.pkl"
         with open(filename, 'rb') as file:
             orth_state2 = pickle.load(file)
-
-        this_state = (H_mu_nu_list_spin_layer, copy.deepcopy(orth_state2), trunc_tol, r_THC, max_bond_Krylov)
-        #this_state.orthonormalize('right')
-        #print(this_state.bond_dims)
         
+        #first calculate H \v_i
+        this_state = apply_thc_mpo_and_compress(H_mu_nu_list_spin_layer, copy.deepcopy(orth_state2), trunc_tol, max_bond_Krylov, r_THC)
+        this_state.orthonormalize('right')
+        print(this_state.bond_dims)
+        #orthogonalize "this state H \v_i" against the previous two”
         this_state = ortho_to_previous_two(orth_state1, orth_state2, this_state, max_bond_Krylov, trunc_tol)
-        
+        # store orthogonalized H \v_i in disk.
         filename = foldername + f"/Krylov_vec{i}.pkl"
         with open(filename, 'wb') as file:
             pickle.dump(this_state, file)
             
             
 def ortho_to_previous_two(orth_state1, orth_state2, this_state, max_bond, trunc_tol_ortho):
-    #orthoglnolize to previous another two states, in MPS form 
+    
+    #orthoglnolize "this state" to previous two states, in MPS form.
     
     temp_state = copy.deepcopy(this_state)
     
@@ -234,5 +192,110 @@ def ortho_to_previous_two(orth_state1, orth_state2, this_state, max_bond, trunc_
     temp.A[0] = -vdot(temp_state, temp)* temp.A[0]
     this_state =  add_mps_and_compress(copy.deepcopy(this_state), temp, trunc_tol_ortho, max_bond)
     
-    #this_state.orthonormalize('left')
+    this_state.orthonormalize('right')
+    
     return(this_state)
+
+
+def get_W(N_use, foldername):
+    #use stratege proposd in <Lanczos algorithm with Matrix Product States for dynamical correlation functions> to improve orthogonality
+    #get W in the paper
+    W = np.zeros([N_use, N_use])
+
+    for i in range (N_use):
+        for j in range (N_use):
+            filename = foldername + f"/Krylov_vec{i}.pkl"
+            with open(filename, 'rb') as file:
+                temp1 = pickle.load(file)
+                
+            filename = foldername + f"/Krylov_vec{j}.pkl"
+            with open(filename, 'rb') as file:
+                temp2 = pickle.load(file)
+            W[i,j] = np.vdot(temp1.as_vector(), temp2.as_vector())
+    
+    return(W)
+
+def get_S(W):
+    #use stratege proposd in <Lanczos algorithm with Matrix Product States for dynamical correlation functions> to improve orthogonality
+    #get S using W in the paper
+    x = W.shape[0]
+    S = []
+    S.append(np.zeros(x))
+    S[0][0] = 1
+
+    S_tilde = []
+    S_tilde.append(np.zeros(x))
+    S_tilde[0][0] = 1
+
+    k = np.zeros([x,x])
+    k[0, 0] = 1
+    k[0,:] = W[:,0]
+
+    Normalization = np.zeros(x)
+    Normalization[0] = 1
+
+    for n in range (1, x):
+        
+        S_tilde.append(np.zeros(x))
+        S.append(np.zeros(x))
+        
+        S[n][n] = 1
+        for i in range (n):
+            for k in range (i+1):
+                for k_prime in range (i+1):
+                    S[n][k_prime] += -W[n,k] * S[i][k_prime]* S[i][k]     
+                
+        Normalization[n] = np.sqrt(sum(S[n][p] * S[n][q] * W[p, q] for p in range(n + 1) for q in range(n + 1)))
+
+        S[n] = S[n]/Normalization[n]
+
+    return (S)
+
+def generate_re_ortho_space(N_use, W, foldername):
+    #use stratege proposd in <Lanczos algorithm with Matrix Product States for dynamical correlation functions> to improve orthogonality
+    #generate a list of post-orthogonalized Krylov vectors (in np.array)
+    S = get_S(W)
+    vector_list = []
+    
+    filename = foldername + f"/Krylov_vec{0}.pkl"
+    with open(filename, 'rb') as file:
+        shape_test = pickle.load(file)
+    L = shape_test.nsites
+    
+    for i in range (N_use):
+        temp2 = np.zeros([2**L], dtype = 'complex128')
+        for j in range (i+1):
+            filename = foldername + f"/Krylov_vec{j}.pkl"
+            with open(filename, 'rb') as file:
+                temp1 = pickle.load(file)
+            temp2 += S[i][j]* temp1.as_vector()
+        
+        temp2 /= np.linalg.norm(temp2)
+        vector_list.append(temp2)
+    return(vector_list)
+
+def generate_reduced_H(vector_list, H):
+    H_reduced = np.zeros([len(vector_list), len(vector_list)])
+    for i in range (len(vector_list)):
+        for j in range (len(vector_list)):
+            H_reduced[i, j] = np.vdot(vector_list[i], H@vector_list[j])
+    return(H_reduced)
+
+def popcount(x):
+    return bin(x).count('1')
+
+def generate_Hamiltonian_with_occupation_number(H, n):
+    """
+    Efficiently extract a Hamiltonian with a fixed occupation number from a given Hamiltonian H.
+    """
+    rows, cols = H.nonzero()
+    size = H.shape
+    H_occu = sparse.csr_matrix((size[0], size[0]), dtype=float)
+    
+    valid_indices = [(i, j) for i, j in zip(rows, cols) if popcount(i) == n and popcount(j) == n]
+    
+    if valid_indices:
+        valid_rows, valid_cols = zip(*valid_indices)
+        H_occu[valid_rows, valid_cols] = H[valid_rows, valid_cols]
+
+    return H_occu
