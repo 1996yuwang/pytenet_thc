@@ -1,16 +1,15 @@
 import numpy as np
 from .operation import apply_operator, add_mps_and_compress, apply_operator_and_compress, vdot
 import copy
-import pickle
-from scipy import sparse
 
+__all__ = ['H_on_mps_compress_by_layer', 'apply_thc_mpo_and_compress', 'find_indices_spin']
 
 
 def H_on_mps_compress_by_layer(H_mu_nu_by_layer, psi, tol, max_bond_layer):
     ''' 
     H_mu_nu_by_layer: the four MPOs of sub-Hamiltonian H_mu_nu.
     Apply the four elementary MPOs to psi and compress, sequentially.
-    return: compressed H_mu_nu|\psi>
+    return: compressed H_mu_nu|\psi>.
     '''
     temp = copy.deepcopy(psi)
     for layer in H_mu_nu_by_layer:

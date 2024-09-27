@@ -25,3 +25,6 @@ from .util            import *
 from .hamiltonian_thc            import *
 from .hamiltonian_thc_old        import *
 from .hartree_fock_mps           import *
+from .global_krylov_method       import *
+from .operation_thc              import *
+from .global_krylov_method       import *
