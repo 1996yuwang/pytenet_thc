@@ -146,6 +146,7 @@ def get_S(W):
 def generate_re_ortho_space(N_use, W, foldername):
     #use stratege proposd in <Lanczos algorithm with Matrix Product States for dynamical correlation functions> to improve orthogonality
     #generate a list of post-orthogonalized Krylov vectors (in np.array)
+    #Note: the vectors in this list are all np.array, we will have another MPS version.
     S = get_S(W)
     vector_list = []
     
