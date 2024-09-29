@@ -268,3 +268,11 @@ def coeff_canonical_orthogonalization(N_Krylov, foldername):
     
     return (S_inv_sqrt)
 
+def remain_only_tridiagonal_elements(H):
+    # Create a mask for the tridiagonal elements
+    tridiag_mask = np.eye(H.shape[0], k=0, dtype=bool) | \
+                np.eye(H.shape[0], k=1, dtype=bool) | \
+                np.eye(H.shape[0], k=-1, dtype=bool)
+
+    # Apply the mask to retain only tridiagonal elements
+    return (np.where(tridiag_mask, H, 0))
