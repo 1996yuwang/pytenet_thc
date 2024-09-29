@@ -1,7 +1,7 @@
 import numpy as np
 import pickle
 import copy
-from .operation import vdot
+from .operation import vdot, operator_inner_product
 from .operation_thc import apply_thc_mpo_and_compress, add_mps_and_compress
 from scipy import sparse
 
@@ -143,10 +143,12 @@ def get_S(W):
 
     return (S)
 
-def generate_re_ortho_space(N_use, W, foldername):
+
+def generate_re_ortho_space(N_use, foldername):
     #use stratege proposd in <Lanczos algorithm with Matrix Product States for dynamical correlation functions> to improve orthogonality
     #generate a list of post-orthogonalized Krylov vectors (in np.array)
     #Note: the vectors in this list are all np.array, we will have another MPS version.
+    W = get_W(N_use, foldername)
     S = get_S(W)
     vector_list = []
     
@@ -167,6 +169,32 @@ def generate_re_ortho_space(N_use, W, foldername):
         vector_list.append(temp2)
     return(vector_list)
 
+def generate_reduced_H_non_ortho(N, foldername, H_mpo):
+    """ 
+    Args: vectors (which are not orthogonal) as MPS, stored in folder 'foldername'
+    
+    H_mpo: hamiltonian as mpo
+    
+    Return: matrix as np.array: <v_i|H|v_j>
+    
+    The calculation is done using only MPS/MPO
+    """
+    H_reduced = np.zeros([N, N])
+    for i in range (N):
+        for j in range (N):
+            filename = foldername + f"/Krylov_vec{i}.pkl"
+            with open(filename, 'rb') as file:
+                temp1 = pickle.load(file)
+                
+            filename = foldername + f"/Krylov_vec{j}.pkl"
+            with open(filename, 'rb') as file:
+                temp2 = pickle.load(file)
+            
+            H_reduced[i, j] = operator_inner_product(temp1, H_mpo, temp2)
+    
+    return(H_reduced)
+    
+
 def generate_reduced_H(vector_list, H):
     H_reduced = np.zeros([len(vector_list), len(vector_list)])
     for i in range (len(vector_list)):
@@ -174,8 +202,11 @@ def generate_reduced_H(vector_list, H):
             H_reduced[i, j] = np.vdot(vector_list[i], H@vector_list[j])
     return(H_reduced)
 
+
+
 def popcount(x):
     return bin(x).count('1')
+
 
 def generate_Hamiltonian_with_occupation_number(H, n):
     """
@@ -192,3 +223,48 @@ def generate_Hamiltonian_with_occupation_number(H, n):
         H_occu[valid_rows, valid_cols] = H[valid_rows, valid_cols]
 
     return H_occu
+
+
+def generate_re_ortho_space_with_coeff(N_use, C, foldername):
+    #Input: a list of vectors stored in foldername
+    #C: the coeff which tell us how to combine above vectors into orthogonal basis
+    # |\psi_n> = \sum C_ni |\phi_i>, where \psi is new orthogonal basis, \phi are 'material' vectors
+    #Note: the vectors in this list are all np.array, we will have another MPS version.
+    vector_list = []
+    
+    filename = foldername + f"/Krylov_vec{0}.pkl"
+    with open(filename, 'rb') as file:
+        shape_test = pickle.load(file)
+    L = shape_test.nsites
+    
+    for i in range (N_use):
+        temp2 = np.zeros([2**L], dtype = 'complex128')
+        for j in range (N_use):
+            filename = foldername + f"/Krylov_vec{j}.pkl"
+            with open(filename, 'rb') as file:
+                temp1 = pickle.load(file)
+            temp2 += C[i][j]* temp1.as_vector()
+        
+        temp2 /= np.linalg.norm(temp2)
+        vector_list.append(temp2)
+    return(vector_list)
+
+
+def coeff_canonical_orthogonalization(N_Krylov, foldername):
+    '''  
+    Input: original vectors stored in foldername
+    output: coeff matrix which can transform original vectors into orthogonal basis
+    Advantage: such a ortho method can orthogonalize the vectors very well (better than Gram-Schmidt)
+    Disadvantage: need to iteration to get ground state, since the first several ortho basis are more different 
+    from original basis, which could be nice approx. to ground state (e.g., Hartree-Fock state).
+    '''
+    
+    W = get_W(N_Krylov, foldername)
+    D, U = np.linalg.eigh(W) 
+    sqrt_D = np.sqrt(D)
+    inverse_sqrt_D = 1 / sqrt_D
+    D_invers_sq_root = np.diag(inverse_sqrt_D)
+    S_inv_sqrt = U @ D_invers_sq_root @ U.T
+    
+    return (S_inv_sqrt)
+
