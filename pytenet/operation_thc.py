@@ -1,6 +1,7 @@
 import numpy as np
-from .operation import apply_operator, add_mps_and_compress, apply_operator_and_compress, vdot
+from .operation import apply_operator, add_mps_and_compress, apply_operator_and_compress, add_mps_and_compress_direct_SVD
 import copy
+from .mpo import MPO
 
 __all__ = ['H_on_mps_compress_by_layer', 'apply_thc_mpo_and_compress', 'find_indices_spin']
 
@@ -9,7 +10,7 @@ def H_on_mps_compress_by_layer(H_mu_nu_by_layer, psi, tol, max_bond_layer):
     ''' 
     H_mu_nu_by_layer: the four MPOs of sub-Hamiltonian H_mu_nu.
     Apply the four elementary MPOs to psi and compress, sequentially.
-    return: compressed H_mu_nu|\psi>.
+    return: compressed H_mu_nu|\psi> in left-canonical form.
     '''
     temp = copy.deepcopy(psi)
     for layer in H_mu_nu_by_layer:
@@ -30,6 +31,8 @@ def apply_thc_mpo_and_compress(sub_H_list_as_layer, psi, trunc_tol, max_bond_glo
     
     Why is this so long? What does try/ except do? In the case singular values are small, the SVD doesn't converge, so that we must truncate more. 
     When the SVD convergence error occurs, we increase the trunc_tol. It only works when tunc_tol is not set as 0.
+    
+    For add, we allow a little larger bond-dims, since it is cheap. But the final Krylov vectors are still kept as the same.
     '''
     psi_original = copy.deepcopy(psi)
     for nu in range (r_THC):
@@ -40,7 +43,7 @@ def apply_thc_mpo_and_compress(sub_H_list_as_layer, psi, trunc_tol, max_bond_glo
             try:
                 H_nu_psi =  H_on_mps_compress_by_layer(temp_layers_nu, psi_original, trunc_tol, max_bond_global)
             except Exception:
-                svd_small_count += 1
+                #svd_small_count += 1
                 print(nu, s1)
                 try:
                     H_nu_psi =  H_on_mps_compress_by_layer(temp_layers_nu, psi_original, 10*trunc_tol, max_bond_global)
@@ -64,7 +67,7 @@ def apply_thc_mpo_and_compress(sub_H_list_as_layer, psi, trunc_tol, max_bond_glo
                             H_on_psi = H_on_mps_compress_by_layer(temp_layers_mu, H_nu_psi, trunc_tol, max_bond_global)
                 
                         except Exception:
-                            svd_small_count += 1
+                            #svd_small_count += 1
                             print(mu, nu, s1, s2)
                             try:
                                 H_on_psi = H_on_mps_compress_by_layer(temp_layers_mu, H_nu_psi, 10*trunc_tol, max_bond_global)
@@ -79,17 +82,22 @@ def apply_thc_mpo_and_compress(sub_H_list_as_layer, psi, trunc_tol, max_bond_glo
                     else: 
                         try:
                             temp_mps = H_on_mps_compress_by_layer(temp_layers_mu, H_nu_psi, trunc_tol, max_bond_global)
+                            #we allow a little larger bond-dims for addition
+                            #H_on_psi = add_mps_and_compress_direct_SVD(H_on_psi, temp_mps, trunc_tol, 2*max_bond_global) 
                             H_on_psi = add_mps_and_compress(H_on_psi, temp_mps, trunc_tol, max_bond_global) 
+                            #H_on_psi = add_mps_and_compress(H_on_psi, temp_mps, trunc_tol, max_bond_global) 
                         except Exception:
-                            svd_small_count += 1
+                            #svd_small_count += 1
                             print(mu, nu, s1, s2)
                             try:
                                 temp_mps = H_on_mps_compress_by_layer(temp_layers_mu, H_nu_psi, 10*trunc_tol, max_bond_global)
                                 H_on_psi = add_mps_and_compress(H_on_psi, temp_mps, 10*trunc_tol, max_bond_global) 
+                                #H_on_psi = add_mps_and_compress_direct_SVD(H_on_psi, temp_mps, 10*trunc_tol, max_bond_global) 
+                                
                             except Exception:
                                 try:
                                     temp_mps = H_on_mps_compress_by_layer(temp_layers_mu, H_nu_psi, 100*trunc_tol, max_bond_global)
-                                    H_on_psi = add_mps_and_compress(H_on_psi, temp_mps, 100*trunc_tol, max_bond_global) 
+                                    H_on_psi = add_mps_and_compress(H_on_psi, temp_mps, 100*trunc_tol, max_bond_global)  
                                 except Exception:
                                     try:
                                         temp_mps = H_on_mps_compress_by_layer(temp_layers_mu, H_nu_psi, 1000*trunc_tol, max_bond_global)
@@ -98,6 +106,8 @@ def apply_thc_mpo_and_compress(sub_H_list_as_layer, psi, trunc_tol, max_bond_glo
                                         print("still fail for 4th attempt")
     
     #The last step: apply kinetic term on \psi, and add it to the summation.
+    #H_on_psi = add_mps_and_compress_direct_SVD(H_on_psi, Kinetic_on_psi, trunc_tol, max_bond_global) 
+    
     Kinetic_on_psi = apply_operator_and_compress(sub_H_list_as_layer[-1][0], psi_original, trunc_tol, max_bond_global)                         
     H_on_psi = add_mps_and_compress(H_on_psi, Kinetic_on_psi, trunc_tol, max_bond_global) 
      
@@ -299,3 +309,30 @@ def find_indices_spin (mu, nu, s1 ,s2 ,r_THC):
 #         H_occu[valid_rows, valid_cols] = H[valid_rows, valid_cols]
 
 #     return H_occu
+
+def get_num_op_mpo(site_ind, L):
+    #attention:
+    #in our case, we start from the ends to count Z operators...
+    #but for Hamiltonian, due to the Z operators only exist BETWEEN two sites, so that which site we 
+    #start the Z operators doesn't matter.
+    
+    d = 2
+    qd = np.zeros(d, dtype=int)
+    
+    DO =  [1] * (L + 1) 
+    qDO = [np.zeros(Di, dtype=int) for Di in DO]
+    
+    I2 = np.identity(2)
+    num_op = np.array([[0., 0.],[0, 1.]])
+    
+    mpo = MPO(qd, qDO, fill= 'random' )
+    # for i in range(L):
+    #     (mpo.A[i]).fill(0)
+        
+    for i in range (L):
+        mpo.A[i][:, :, 0, 0] = I2
+        #mpo.A[i][:, :, 0, 0] = pauli_Z
+    
+    mpo.A[site_ind][:, :, 0, 0] = num_op
+        
+    return mpo

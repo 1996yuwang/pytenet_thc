@@ -410,3 +410,13 @@ def add_mps_and_compress(psi1: MPS, psi2: MPS, tol, max_bond_apply):
     psi.compress_no_normalization_max_bond(tol, max_bond = max_bond_apply)
 
     return psi
+
+def add_mps_and_compress_direct_SVD(psi1: MPS, psi2: MPS, tol, max_bond_apply):
+    """
+    Add two MPS, and then compress it, with tol and maximum bond dims.
+    Start from left-canonical form, bring to right-canonical form
+    """
+    psi = add_mps(psi1, psi2)
+    psi.compress_direct_svd_left_max_bond(tol, max_bond = max_bond_apply)
+
+    return psi

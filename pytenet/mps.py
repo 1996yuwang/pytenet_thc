@@ -143,6 +143,8 @@ class MPS:
             # absorb potential phase factor into MPS tensor
             self.A[-1] *= T[0, 0, 0] / abs(T[0, 0, 0])
             return (nrm, abs(T[0, 0, 0]))
+        #return: left-cano MPS
+        
         if mode == 'right':
             # transform to left-canonical form first
             nrm = self.orthonormalize(mode='left')
@@ -159,19 +161,18 @@ class MPS:
             self.A[0] *= T[0, 0, 0] / abs(T[0, 0, 0])
             return (nrm, abs(T[0, 0, 0]))
         raise ValueError(f'mode = {mode} invalid; must be "left" or "right".')
+        #return: lright-cano MPS
     
     def compress_no_normalization_max_bond(self, tol: float, mode='left', max_bond = 10):
         """
         This compression doesn't work with normalized MPS. Mainly used for H|\psi> calculation, which is not normalzied.
         
-        Note that we don't return the norm in this function, while self.compress() returns it.
+        Note that we don't return the norm in this function, while previous self.compress() returns it.
         
         Note that, in compress considering normalization, one need to absorb T to make sure the whole MPS normalized, but
         one don't have to do it for this version. 
         
         Compress and orthonormalize a MPS by site-local SVDs and singular value truncations.
-
-        Nothing returns.
         
         Attention: the tol here works on normalized matrix, thus the final error will be scaled by nrm!
         """
@@ -193,6 +194,7 @@ class MPS:
             #in the case tol is too high, the mps will be truncated to 0 
             if T.shape != (1, 1, 1):
                 self = empty_mps(self.nsites)
+            #return: left-cano MPS
             
         if mode == 'right':
             # transform to left-canonical form first
@@ -212,7 +214,67 @@ class MPS:
             #in the case tol is too high, the mps will be truncated to 0 
             if T.shape != (1, 1, 1):
                 self = empty_mps(self.nsites)
+            #return: right-cano MPS
+            
         #raise ValueError(f'mode = {mode} invalid; must be "left" or "right".')
+        
+    def compress_direct_svd_left_max_bond(self, tol: float, max_bond = 10):
+        """
+        Simply use SVD to truncate a left-canonical form MPS. 
+        
+        For accuracy, the MPS here should be in canonical form. Thus this function is suitable for 
+        compressing addition of two canonical MPS.
+        
+        Attention: please start from left-canonical form.
+        
+        Return: truncated MPS in right-canonical form
+        """
+        #start from left side:
+        for i in range(len(self.A) - 1):
+            self.A[i], self.A[i+1], self.qD[i+1] = local_orthonormalize_left_svd_max_bond(self.A[i], self.A[i+1], self.qd, self.qD[i:i+2], tol, max_bond)
+            assert is_qsparse(self.A[i], [self.qd, self.qD[i], -self.qD[i+1]]), \
+                'sparsity pattern of MPS tensor does not match quantum numbers'
+        # last tensor
+        self.A[-1], T, self.qD[-1] = local_orthonormalize_left_svd_max_bond(self.A[-1], np.array([[[1]]]), self.qd, self.qD[-2:], tol, max_bond)
+        assert is_qsparse(self.A[-1], [self.qd, self.qD[-2], -self.qD[-1]]), \
+            'sparsity pattern of MPS tensor does not match quantum numbers'
+
+        self.A[-1] *= T[0, 0, 0]
+        #in the case tol is too high, the mps will be truncated to 0 
+        if T.shape != (1, 1, 1):
+            self = empty_mps(self.nsites)
+            
+            
+    def compress_direct_svd_right_max_bond(self, tol: float, max_bond = 10):
+        """
+        Simply use SVD to truncate a right-canonical form MPS. 
+        
+        For accuracy, the MPS here should be in canonical form. Thus this function is suitable for 
+        compressing addition of two canonical MPS.
+        
+        Attention: please start from left-canonical form.
+        
+        Return: truncated MPS in left-canonical form
+        """
+        #start from right side
+        for i in reversed(range(1, len(self.A))):
+            self.A[i], self.A[i-1], self.qD[i] = local_orthonormalize_right_svd_max_bond(self.A[i], self.A[i-1], self.qd, self.qD[i:i+2], tol, max_bond)
+            assert is_qsparse(self.A[i], [self.qd, self.qD[i], -self.qD[i+1]]), \
+                'sparsity pattern of MPS tensor does not match quantum numbers'
+        # first tensor
+        self.A[0], T, self.qD[0] = local_orthonormalize_right_svd_max_bond(self.A[0], np.array([[[1]]]), self.qd, self.qD[:2], tol, max_bond)
+        assert is_qsparse(self.A[0], [self.qd, self.qD[0], -self.qD[1]]), \
+            'sparsity pattern of MPS tensor does not match quantum numbers'
+            
+        self.A[0] *= T[0, 0, 0]
+        #in the case tol is too high, the mps will be truncated to 0 
+        if T.shape != (1, 1, 1):
+            self = empty_mps(self.nsites)
+    #raise ValueError(f'mode = {mode} invalid; must be "left" or "right".')
+    
+    
+            
+      
 
     def as_vector(self) -> np.ndarray:
         """
@@ -492,3 +554,17 @@ def empty_mps(L):
     mps.qD = [np.zeros(Di, dtype=int) for Di in mps.bond_dims]   
     
     return mps
+
+def create_random_mps(bond_set, dir):
+    # physical dimension (of each lattice site);
+    d = 2
+    D = bond_set
+    qd = np.zeros(d, dtype=int)
+    qD = [np.zeros(Di, dtype=int) for Di in D]
+
+    rng = np.random.default_rng(42)
+    A = MPS(qd, qD, fill='random', rng=rng)
+
+    A.orthonormalize(mode = dir)
+ 
+    return A

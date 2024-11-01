@@ -1,11 +1,14 @@
 import numpy as np
 import pickle
 import copy
-from .operation import vdot, operator_inner_product
-from .operation_thc import apply_thc_mpo_and_compress, add_mps_and_compress
+from .mps import add_mps
+from .operation import vdot, operator_inner_product, operator_average, add_mps_and_compress
+#from .operation import add_mps_and_compress_direct_SVD
+from .operation_thc import apply_thc_mpo_and_compress
 from scipy import sparse
 
 __all__ = ['generate_krylov_space_in_disk', 'ortho_to_previous_two', 'get_W', 'get_S', 'ortho_to_previous_two', 'generate_re_ortho_space', 'generate_reduced_H', 'generate_Hamiltonian_with_occupation_number']
+
 
 def generate_krylov_space_in_disk(N_Krylov, H_mu_nu_list_spin_layer, psi_original, max_bond_Krylov, trunc_tol, r_THC, foldername):  
     '''  
@@ -34,7 +37,9 @@ def generate_krylov_space_in_disk(N_Krylov, H_mu_nu_list_spin_layer, psi_origina
 
     temp = copy.deepcopy(psi_original)
     temp.A[0] = -vdot(H_on_psi, temp)* temp.A[0]
+    #compress the bond dims back 
     H_on_psi =  add_mps_and_compress(copy.deepcopy(H_on_psi), temp, trunc_tol, max_bond_Krylov)
+    #H_on_psi =  add_mps_and_compress(copy.deepcopy(H_on_psi), temp, trunc_tol, max_bond_Krylov)
     H_on_psi.orthonormalize('right')
 
     filename = foldername + f"/Krylov_vec{1}.pkl"
@@ -58,10 +63,10 @@ def generate_krylov_space_in_disk(N_Krylov, H_mu_nu_list_spin_layer, psi_origina
             orth_state2 = pickle.load(file)
         
         #first calculate H \v_i
-        this_state = apply_thc_mpo_and_compress(H_mu_nu_list_spin_layer, copy.deepcopy(orth_state2), trunc_tol, max_bond_Krylov, r_THC)
+        this_state = apply_thc_mpo_and_compress(H_mu_nu_list_spin_layer, copy.deepcopy(orth_state2), trunc_tol, 2*max_bond_Krylov, r_THC)
         this_state.orthonormalize('right')
         #print(this_state.bond_dims)
-        #orthogonalize "this state H \v_i" against the previous two”
+        #orthogonalize "this state H \v_i" against the previous two” and compress the bond dims back 
         this_state = ortho_to_previous_two(orth_state1, orth_state2, this_state, max_bond_Krylov, trunc_tol)
         print(this_state.bond_dims)
         # store orthogonalized H \v_i in disk.
@@ -78,7 +83,8 @@ def ortho_to_previous_two(orth_state1, orth_state2, this_state, max_bond, trunc_
     
     temp = copy.deepcopy(orth_state1)
     temp.A[0] = -vdot(temp_state, temp)* temp.A[0]
-    this_state = add_mps_and_compress(copy.deepcopy(this_state), temp, trunc_tol_ortho, max_bond)
+    #this_state = add_mps_and_compress(copy.deepcopy(this_state), temp, trunc_tol_ortho, 2*max_bond)
+    this_state = add_mps(copy.deepcopy(this_state), temp)
     
     temp = copy.deepcopy(orth_state2)
     temp.A[0] = -vdot(temp_state, temp)* temp.A[0]
@@ -103,7 +109,7 @@ def get_W(N_use, foldername):
             filename = foldername + f"/Krylov_vec{j}.pkl"
             with open(filename, 'rb') as file:
                 temp2 = pickle.load(file)
-            W[i,j] = np.vdot(temp1.as_vector(), temp2.as_vector())
+            W[i,j] = vdot(temp1, temp2)
     
     return(W)
 
@@ -142,6 +148,20 @@ def get_S(W):
         S[n] = S[n]/Normalization[n]
 
     return (S)
+
+def coeff_gram_schmidt(N, foldername):
+    '''
+    actually, it is just a simple combination of above two functions.
+    input: Krylov subspace size, Krylov vectors stored in foldername
+    output: orthogonal coeff as numpy array
+    Attention: here the coeff is as numpy array, instead of a list as above.
+    '''
+    W = get_W(N, foldername)
+    coeff = get_S(W)
+    coeff = np.array(coeff) 
+    
+    return coeff
+    
 
 
 def generate_re_ortho_space(N_use, foldername):
@@ -268,6 +288,7 @@ def coeff_canonical_orthogonalization(N_Krylov, foldername):
     
     return (S_inv_sqrt)
 
+
 def remain_only_tridiagonal_elements(H):
     # Create a mask for the tridiagonal elements
     tridiag_mask = np.eye(H.shape[0], k=0, dtype=bool) | \
@@ -276,3 +297,113 @@ def remain_only_tridiagonal_elements(H):
 
     # Apply the mask to retain only tridiagonal elements
     return (np.where(tridiag_mask, H, 0))
+
+
+def solve_ritz(folder_containing_Krylov, H_reduced, N_subspace, coeff, max_bond, e_ref, mpo_ref):
+    ''' 
+    Given orthogonal Krylov vectors (represented by coeff), solve ritz vector.
+    
+    folder_containing_Krylov: foldername which contains Krylov vector
+    H_reduced: reduced Hamiltonian calculated by orthogonal basis
+    coeff: post-orthogonalization coeff, which linearly combine the Krylov vectors into orthogonal basis 
+    max_bond: the max_bond used to represent the ritz vector
+    e_ref: target energy
+    mpo_ref: conventional mpo. Using conventional MPO to  calculate expectation value doenn't require large memory.
+
+    return: ritz value and ritz vector (only smallest Ritz)
+    '''
+    for n in range (5, N_subspace+1, 5):
+        e, v = np.linalg.eigh(H_reduced[:n, :n])
+        C_ritz = ((v[:,0].reshape(n, 1)).transpose(1, 0))@ coeff[:n, :n]
+        C_ritz  = C_ritz.reshape(C_ritz.shape[1],)
+        
+        filename = folder_containing_Krylov + f"/Krylov_vec{0}.pkl"
+        with open(filename, 'rb') as file:
+            ritz_vec = pickle.load(file)
+        ritz_vec.A[0] = C_ritz[0]* ritz_vec.A[0]
+        
+        for i in range (1, n, 1):
+            filename = folder_containing_Krylov + f"/Krylov_vec{i}.pkl"
+            with open(filename, 'rb') as file:
+                temp = pickle.load(file)
+            temp.A[0] = C_ritz[i]* temp.A[0]
+            #ritz_vec = add_mps_and_compress_direct_SVD(ritz_vec, temp, 0, 2* max_bond)
+            ritz_vec = add_mps_and_compress(ritz_vec, temp, 0, 2* max_bond)
+        #using svd to go back to max_bond, and left canonical-form
+        ritz_vec.compress_direct_svd_right_max_bond(0, max_bond)
+        #orthonormalize
+        ritz_vec.orthonormalize('right')
+        e_ritz = operator_average(ritz_vec, mpo_ref)
+        print(e_ritz-e_ref)
+    
+    return e_ritz, ritz_vec
+            
+
+
+def solve_ritz_two_vec(folder_containing_Krylov, H_reduced, N_subspace, coeff, max_bond, e1, e2, mpo_ref):
+    ''' 
+    Given orthogonal Krylov vectors (represented by coeff), solve TWO ritz vectors with smallest values.
+    
+    folder_containing_Krylov: foldername which contains Krylov vector
+    H_reduced: reduced Hamiltonian calculated by orthogonal basis
+    coeff: post-orthogonalization coeff, which linearly combine the Krylov vectors into orthogonal basis 
+    max_bond: the max_bond used to represent the ritz vector
+    e1: ground energy
+    e2: 1st_ex energy
+    mpo_ref: conventional mpo. Using conventional MPO to  calculate expectation value doenn't require large memory.
+
+    return: ritz value and ritz vector (TWO smallest Ritz values)
+    '''
+    for n in range (5, N_subspace+1, 5):
+        e, v = np.linalg.eigh(H_reduced[:n, :n])
+        
+        #1st Ritz:
+        C_ritz = ((v[:,0].reshape(n, 1)).transpose(1, 0))@ coeff[:n, :n]
+        C_ritz  = C_ritz.reshape(C_ritz.shape[1],)
+        
+        filename = folder_containing_Krylov + f"/Krylov_vec{0}.pkl"
+        with open(filename, 'rb') as file:
+            ritz_vec = pickle.load(file)
+        ritz_vec.A[0] = C_ritz[0]* ritz_vec.A[0]
+        
+        for i in range (1, n, 1):
+            filename = folder_containing_Krylov + f"/Krylov_vec{i}.pkl"
+            with open(filename, 'rb') as file:
+                temp = pickle.load(file)
+            temp.A[0] = C_ritz[i]* temp.A[0]
+            #ritz_vec = add_mps_and_compress_direct_SVD(ritz_vec, temp, 0, 2* max_bond)
+            ritz_vec = add_mps_and_compress(ritz_vec, temp, 0, 2* max_bond)
+        #using svd to go back to max_bond, and left canonical-form
+        ritz_vec.compress_direct_svd_right_max_bond(0, max_bond)
+        #orthonormalize
+        ritz_vec.orthonormalize('right')
+        e_ritz = operator_average(ritz_vec, mpo_ref)
+        e_ritz = operator_average(ritz_vec, mpo_ref)
+        print('ground error', e_ritz - e1)
+        
+        #2nd Ritz:
+        C_ritz2 = ((v[:,1].reshape(n, 1)).transpose(1, 0))@ coeff[:n, :n]
+        C_ritz2  = C_ritz2.reshape(C_ritz2.shape[1],)
+        
+        filename = folder_containing_Krylov + f"/Krylov_vec{0}.pkl"
+        with open(filename, 'rb') as file:
+            ritz_vec2 = pickle.load(file)
+        ritz_vec2.A[0] = C_ritz2[0]* ritz_vec2.A[0]
+        
+        for i in range (1, n, 1):
+            filename2 = folder_containing_Krylov + f"/Krylov_vec{i}.pkl"
+            with open(filename2, 'rb') as file:
+                temp2 = pickle.load(file)
+            temp2.A[0] = C_ritz2[i]* temp2.A[0]
+            #ritz_vec = add_mps_and_compress_direct_SVD(ritz_vec, temp, 0, 2* max_bond)
+            ritz_vec = add_mps_and_compress(ritz_vec, temp, 0, 2* max_bond)
+        #using svd to go back to max_bond, and left canonical-form
+        #ritz_vec.compress_direct_svd_right_max_bond(0, max_bond)
+        #orthonormalize
+        ritz_vec.orthonormalize('right')
+        e_ritz2 = operator_average(ritz_vec2, mpo_ref)
+        e_ritz2 = operator_average(ritz_vec2, mpo_ref)
+        print('first excited error', e_ritz2 - e2)
+    
+    return [e_ritz, e_ritz2], [ritz_vec, ritz_vec2]
+    
