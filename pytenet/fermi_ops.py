@@ -22,3 +22,48 @@ def generate_fermi_operators(L: int):
     # corresponding annihilation operators
     alist = [c.conj().T for c in clist]
     return (clist, alist)
+
+def generate_single_cre_fermi_operator(site, L: int):
+    """
+    Generate sparse matrix representations of the fermionic creation and
+    annihilation operators for `L` sites (or modes).
+    """
+    I = sparse.identity(2)
+    Z = sparse.csr_matrix([[ 1.,  0.], [ 0., -1.]])
+    U = sparse.csr_matrix([[ 0.,  0.], [ 1.,  0.]])
+
+    c = sparse.identity(1)
+    for j in range(L):
+        if j < site:
+            c = sparse.kron(c, I)
+        elif j == site:
+            c = sparse.kron(c, U)
+        else:
+            c = sparse.kron(c, Z)
+    
+    # corresponding annihilation operators
+    #a = c.conj()
+    return c
+
+def generate_single_annil_fermi_operator(site, L: int):
+    """
+    Generate sparse matrix representations of the fermionic creation and
+    annihilation operators for `L` sites (or modes).
+    """
+    I = sparse.identity(2)
+    Z = sparse.csr_matrix([[ 1.,  0.], [ 0., -1.]])
+    U = sparse.csr_matrix([[ 0.,  0.], [ 1.,  0.]])
+    
+    c = sparse.identity(1)
+    for j in range(L):
+        if j < site:
+            c = sparse.kron(c, I)
+        elif j == site:
+            c = sparse.kron(c, U)
+        else:
+            c = sparse.kron(c, Z)
+    
+    # corresponding annihilation operators
+    a = c.conj()
+    
+    return a

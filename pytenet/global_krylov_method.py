@@ -88,6 +88,7 @@ def ortho_to_previous_two(orth_state1, orth_state2, this_state, max_bond, trunc_
     
     temp = copy.deepcopy(orth_state2)
     temp.A[0] = -vdot(temp_state, temp)* temp.A[0]
+    
     this_state =  add_mps_and_compress(copy.deepcopy(this_state), temp, trunc_tol_ortho, max_bond)
     
     this_state.orthonormalize('right')
@@ -146,7 +147,7 @@ def get_S(W):
         Normalization[n] = np.sqrt(sum(S[n][p] * S[n][q] * W[p, q] for p in range(n + 1) for q in range(n + 1)))
 
         S[n] = S[n]/Normalization[n]
-
+        
     return (S)
 
 def coeff_gram_schmidt(N, foldername):
@@ -215,6 +216,7 @@ def generate_reduced_H_non_ortho(N, foldername, H_mpo):
     return(H_reduced)
     
 
+#this version runs with vectors, only as a ref
 def generate_reduced_H(vector_list, H):
     H_reduced = np.zeros([len(vector_list), len(vector_list)])
     for i in range (len(vector_list)):
@@ -280,6 +282,23 @@ def coeff_canonical_orthogonalization(N_Krylov, foldername):
     '''
     
     W = get_W(N_Krylov, foldername)
+    D, U = np.linalg.eigh(W) 
+    sqrt_D = np.sqrt(D)
+    inverse_sqrt_D = 1 / sqrt_D
+    D_invers_sq_root = np.diag(inverse_sqrt_D)
+    S_inv_sqrt = U @ D_invers_sq_root @ U.T
+    
+    return (S_inv_sqrt)
+
+def coeff_canonical_orthogonalization_using_W(W):
+    '''  
+    Input: original vectors stored in foldername
+    output: coeff matrix which can transform original vectors into orthogonal basis
+    Advantage: such a ortho method can orthogonalize the vectors very well (better than Gram-Schmidt)
+    Disadvantage: need to iteration to get ground state, since the first several ortho basis are more different 
+    from original basis, which could be nice approx. to ground state (e.g., Hartree-Fock state).
+    '''
+    
     D, U = np.linalg.eigh(W) 
     sqrt_D = np.sqrt(D)
     inverse_sqrt_D = 1 / sqrt_D
@@ -396,14 +415,148 @@ def solve_ritz_two_vec(folder_containing_Krylov, H_reduced, N_subspace, coeff, m
                 temp2 = pickle.load(file)
             temp2.A[0] = C_ritz2[i]* temp2.A[0]
             #ritz_vec = add_mps_and_compress_direct_SVD(ritz_vec, temp, 0, 2* max_bond)
-            ritz_vec = add_mps_and_compress(ritz_vec, temp, 0, 2* max_bond)
+            ritz_vec2 = add_mps_and_compress(ritz_vec2, temp, 0, 2* max_bond)
         #using svd to go back to max_bond, and left canonical-form
         #ritz_vec.compress_direct_svd_right_max_bond(0, max_bond)
         #orthonormalize
-        ritz_vec.orthonormalize('right')
-        e_ritz2 = operator_average(ritz_vec2, mpo_ref)
+        ritz_vec2.orthonormalize('right')
         e_ritz2 = operator_average(ritz_vec2, mpo_ref)
         print('first excited error', e_ritz2 - e2)
     
     return [e_ritz, e_ritz2], [ritz_vec, ritz_vec2]
+
+
+def generate_non_ortho_krylov_space_in_disk(N_Krylov, H_mu_nu_list_spin_layer, psi_original, max_bond_Krylov, trunc_tol, r_THC, foldername):  
+    '''  
+    generate non-orthogonalized Krylov space {\psi, H\psi, H^2 \psi, H^3 \psi ...}, and store in disk.
     
+    N_Krylov: the size of Krylov space.
+    
+    H_mu_nu_list_spin_layer: THC-MPO, as a list of MPOs.
+    
+    psi_original: initial state v_0 for Krylov methods.
+    
+    max_bond_Krylov: maximum bond dimension for Krylov vectors.
+    
+    foldername: one must input a foldername where the Krylov vectors are stored in.
+    '''
+    
+    # store the v_0 in disk
+    filename = foldername + f"/Krylov_vec{0}.pkl"
+    with open(filename, 'wb') as file:
+        pickle.dump(copy.deepcopy(psi_original), file)
+        
+    last_state = copy.deepcopy(psi_original)
+    #generate others by simply applying H on vectors (without orthogonalizing)
+    for i in range (1, N_Krylov, 1):
+
+        print(i)    
+        
+        this_state = apply_thc_mpo_and_compress(H_mu_nu_list_spin_layer, copy.deepcopy(last_state), trunc_tol, max_bond_Krylov, r_THC)
+        this_state.orthonormalize('right')
+        print(this_state.bond_dims)
+        # store orthogonalized H \v_i in disk.
+        filename = foldername + f"/Krylov_vec{i}.pkl"
+        with open(filename, 'wb') as file:
+            pickle.dump(this_state, file)
+            
+        last_state = copy.deepcopy(this_state)
+        
+            
+def generate_linear_combination_mps(N, coeff, max_bond, foldername):
+    
+    filename = foldername + f"/Krylov_vec{0}.pkl"
+    with open(filename, 'rb') as file:
+        vec = pickle.load(file)
+    vec.A[0] = coeff[0]* vec.A[0]
+    
+    for i in range (1, N, 1):
+        filename = foldername + f"/Krylov_vec{i}.pkl"
+        with open(filename, 'rb') as file:
+            temp = pickle.load(file)
+        temp.A[0] = coeff[i]* temp.A[0]
+        #ritz_vec = add_mps_and_compress_direct_SVD(ritz_vec, temp, 0, 2* max_bond)
+        vec = add_mps_and_compress(vec, temp, 0, 2* max_bond)
+    #using svd to go back to max_bond, and left canonical-form
+    vec.compress_direct_svd_right_max_bond(0, max_bond)
+    vec.orthonormalize('right')
+    
+    return vec
+
+
+def generate_krylov_space_othogonal_against(N_Krylov, H_mu_nu_list_spin_layer, psi_original, max_bond_Krylov, trunc_tol, r_THC, foldername, vec_to_remove):  
+    '''  
+    generate orthogonalized Krylov space, and store in disk.
+    
+    N_Krylov: the size of Krylov space.
+    
+    H_mu_nu_list_spin_layer: THC-MPO, as a list of MPOs.
+    
+    psi_original: initial state v_0 for Krylov methods.
+    
+    max_bond_Krylov: maximum bond dimension for Krylov vectors.
+    
+    foldername: one must input a foldername where the Krylov vectors are stored in.
+    
+    vec_to_remove: all Krylov vectors should be orthogonal to this vector.
+    '''
+    
+    # store the v_0 in disk
+    psi_original = orthogonalize_to_target(psi_original, copy.deepcopy(vec_to_remove), max_bond_Krylov)
+    psi_original.orthonormalize('right')
+    filename = foldername + f"/Krylov_vec{0}.pkl"
+    with open(filename, 'wb') as file:
+        pickle.dump(copy.deepcopy(psi_original), file)
+    
+
+    # H v_0 and orthogonalize it, then store in disk.
+    H_on_psi = apply_thc_mpo_and_compress(H_mu_nu_list_spin_layer, copy.deepcopy(psi_original), trunc_tol, max_bond_Krylov, r_THC)
+    H_on_psi.orthonormalize('right')
+    print(H_on_psi.bond_dims)
+
+    temp = copy.deepcopy(psi_original)
+    temp.A[0] = -vdot(H_on_psi, temp)* temp.A[0]
+    #compress the bond dims back 
+    H_on_psi =  add_mps_and_compress(copy.deepcopy(H_on_psi), temp, trunc_tol, max_bond_Krylov)
+    #H_on_psi =  add_mps_and_compress(copy.deepcopy(H_on_psi), temp, trunc_tol, max_bond_Krylov)
+    H_on_psi = orthogonalize_to_target(H_on_psi, copy.deepcopy(vec_to_remove), max_bond_Krylov)
+    H_on_psi.orthonormalize('right')
+    filename = foldername + f"/Krylov_vec{1}.pkl"
+    with open(filename, 'wb') as file:
+        pickle.dump(H_on_psi, file)
+
+    # from now on, all the H v_i should be orthogonalized to the previous two vectors.
+    for i in range (2, N_Krylov):
+        
+        #show how many Krylov vectors are achieved     
+        print(i)    
+        # if i % 5 == 0:
+        #     print("implemented:", i)
+        
+        #from disk load the previous two Krylov vectors.    
+        filename = foldername + f"/Krylov_vec{i-2}.pkl"
+        with open(filename, 'rb') as file:
+            orth_state1 = pickle.load(file)
+        filename = foldername + f"/Krylov_vec{i-1}.pkl"
+        with open(filename, 'rb') as file:
+            orth_state2 = pickle.load(file)
+        
+        #first calculate H \v_i
+        this_state = apply_thc_mpo_and_compress(H_mu_nu_list_spin_layer, copy.deepcopy(orth_state2), trunc_tol, 2*max_bond_Krylov, r_THC)
+        this_state.orthonormalize('right')
+
+        this_state = ortho_to_previous_two(orth_state1, orth_state2, this_state, max_bond_Krylov, trunc_tol)
+        this_state = orthogonalize_to_target(this_state, copy.deepcopy(vec_to_remove), max_bond_Krylov)
+        this_state.orthonormalize('right')
+        print(this_state.bond_dims)
+        filename = foldername + f"/Krylov_vec{i}.pkl"
+        with open(filename, 'wb') as file:
+            pickle.dump(this_state, file)
+        #print(vdot(copy.deepcopy(vec_to_remove), copy.deepcopy(vec_to_remove)))    
+        print(vdot(this_state, copy.deepcopy(vec_to_remove)))
+        
+def orthogonalize_to_target(ori_state, to_be_removed, max_bond):
+    
+    to_be_removed.A[0] = -vdot(to_be_removed, copy.deepcopy(ori_state))* to_be_removed.A[0]
+    orthogonalized = add_mps_and_compress(copy.deepcopy(ori_state), to_be_removed, 0, max_bond)
+    return (orthogonalized)

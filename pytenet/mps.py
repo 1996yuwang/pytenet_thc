@@ -217,6 +217,55 @@ class MPS:
             #return: right-cano MPS
             
         #raise ValueError(f'mode = {mode} invalid; must be "left" or "right".')
+    
+    # def compress_no_normalization_max_bond(self, tol: float, mode='left', max_bond = 10):
+    #     """
+    #     This compression doesn't work with normalized MPS. Mainly used for H|\psi> calculation, which is not normalzied.
+        
+    #     Note that we don't return the norm in this function, while previous self.compress() returns it.
+        
+    #     Note that, in compress considering normalization, one need to absorb T to make sure the whole MPS normalized, but
+    #     one don't have to do it for this version. 
+        
+    #     Compress and orthonormalize a MPS by site-local SVDs and singular value truncations.
+        
+    #     Attention: the tol here works on normalized matrix, thus the final error will be scaled by nrm!
+    #     """
+    #     if mode == 'left':
+    #         # transform to right-canonical form first
+    #         nrm = self.orthonormalize(mode='right')
+    #         # cancel the normalization in this step:
+    #         self.A[0] = nrm* self.A[0]
+            
+    #         #initial a label to tell whether the current bond-dim is larger than max_bond
+    #         label = 0
+    #         for i in range(len(self.A) - 1):
+    #             if label == 0:
+    #                 self.A[i], self.A[i+1], self.qD[i+1] = local_orthonormalize_left_qr(self.A[i], self.A[i+1], self.qd, self.qD[i:i+2])
+    #                 if len(self.qD[i+1]) > max_bond:
+    #                     label = 1
+    #                     self.A[i], self.A[i+1], self.qD[i+1] = local_orthonormalize_left_svd_max_bond(self.A[i], self.A[i+1], self.qd, self.qD[i:i+2], tol, max_bond)
+    #             if label == 1:
+    #                 self.A[i], self.A[i+1], self.qD[i+1] = local_orthonormalize_left_svd_max_bond(self.A[i], self.A[i+1], self.qd, self.qD[i:i+2], tol, max_bond)
+    #                 if len(self.qD[i+1]) < max_bond:
+    #                     label = 0
+    #                     #self.A[i], self.A[i+1], self.qD[i+1] = local_orthonormalize_left_qr(self.A[i], self.A[i+1], self.qd, self.qD[i:i+2])
+                 
+                
+    #             assert is_qsparse(self.A[i], [self.qd, self.qD[i], -self.qD[i+1]]), \
+    #                 'sparsity pattern of MPS tensor does not match quantum numbers'
+    #         # last tensor
+    #         self.A[-1], T, self.qD[-1] = local_orthonormalize_left_qr(self.A[-1], np.array([[[1]]]), self.qd, self.qD[-2:])
+    #         assert is_qsparse(self.A[-1], [self.qd, self.qD[-2], -self.qD[-1]]), \
+    #         'sparsity pattern of MPS tensor does not match quantum numbers'
+    
+    #         self.A[-1] *= T[0, 0, 0]
+    #         #in the case tol is too high, the mps will be truncated to 0 
+    #         if T.shape != (1, 1, 1):
+    #             self = empty_mps(self.nsites)
+    #         #return: left-cano MPS
+            
+    
         
     def compress_direct_svd_left_max_bond(self, tol: float, max_bond = 10):
         """
@@ -538,7 +587,6 @@ def local_orthonormalize_right_svd_max_bond(A, Aprev, qd: Sequence[int], qD: Seq
     # update Aprev tensor: multiply with (U @ sigma) from right
     Aprev = np.tensordot(Aprev, U * sigma, (2, 0))
     return (A, Aprev, qbond)
-
     
 
 def empty_mps(L):

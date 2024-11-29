@@ -310,29 +310,30 @@ def find_indices_spin (mu, nu, s1 ,s2 ,r_THC):
 
 #     return H_occu
 
-def get_num_op_mpo(site_ind, L):
-    #attention:
-    #in our case, we start from the ends to count Z operators...
-    #but for Hamiltonian, due to the Z operators only exist BETWEEN two sites, so that which site we 
-    #start the Z operators doesn't matter.
+# def get_num_op_mpo(site_ind, L):
+#     #attention:
+#     #in our case, we start from the ends to count Z operators...
+#     #but for Hamiltonian, due to the Z operators only exist BETWEEN two sites, so that which site we 
+#     #start the Z operators doesn't matter.
     
-    d = 2
-    qd = np.zeros(d, dtype=int)
+#     d = 2
+#     qd = np.zeros(d, dtype=int)
     
-    DO =  [1] * (L + 1) 
-    qDO = [np.zeros(Di, dtype=int) for Di in DO]
+#     DO =  [1] * (L + 1) 
+#     qDO = [np.zeros(Di, dtype=int) for Di in DO]
     
-    I2 = np.identity(2)
-    num_op = np.array([[0., 0.],[0, 1.]])
+#     I2 = np.identity(2)
+#     num_op = np.array([[0., 0.],[0, 1.]])
     
-    mpo = MPO(qd, qDO, fill= 'random' )
-    # for i in range(L):
-    #     (mpo.A[i]).fill(0)
+#     mpo = MPO(qd, qDO, fill= 'random' )
+#     # for i in range(L):
+#     #     (mpo.A[i]).fill(0)
         
-    for i in range (L):
-        mpo.A[i][:, :, 0, 0] = I2
-        #mpo.A[i][:, :, 0, 0] = pauli_Z
+#     for i in range (L):
+#         mpo.A[i][:, :, 0, 0] = I2
+#         #mpo.A[i][:, :, 0, 0] = pauli_Z
     
-    mpo.A[site_ind][:, :, 0, 0] = num_op
+#     mpo.A[site_ind][:, :, 0, 0] = num_op
         
-    return mpo
+#     return mpo
+

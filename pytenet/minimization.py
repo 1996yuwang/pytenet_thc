@@ -159,7 +159,10 @@ def calculate_ground_state_local_twosite(H: MPO, psi: MPS, numsweeps: int, numit
         # record energy after each sweep
         en_min[n] = en
 
-    return en_min
+    #return en_min
+    #added by Yu: also return ground state:
+    return en_min, psi
+
 
 
 def _minimize_local_energy(L, R, W, Astart, numiter: int):

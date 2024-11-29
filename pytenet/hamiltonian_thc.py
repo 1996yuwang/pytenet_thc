@@ -517,3 +517,47 @@ def get_molecular_Hamiltonian_as_sparse_matrix(h1_spin, g_spin):
     H_correct = h1_ref + V_correct
     
     return(H_correct)
+
+def get_anni_op_mpo(site, spin, L):
+    #attention:
+    #in our case, we start from the ends to count Z operators...
+    #but for Hamiltonian, due to the Z operators only exist BETWEEN two sites, so that which site we 
+    #start the Z operators doesn't matter.
+    
+    qN = [0,  1,  1,  2]
+    qS = [0, -1,  1,  0]
+    qd = [_encode_quantum_number_pair(q[0], q[1]) for q in zip(qN, qS)]
+
+    I2 = np.identity(2)
+    I4 = np.identity(4)
+    bose_c = np.array([[0, 0.],[1, 0]])
+    bose_a = np.array([[0, 1.],[0, 0]])
+    pauli_Z = np.array([[1, 0.],[0, -1]])
+    
+    #annihilation
+   
+    if spin == 0: #up
+        qD =  [np.array([0])] * (site+1) + [np.array([-qd[2]])] *(L-site)
+        mpo = MPO(qd, qD, fill= 0.)
+        
+        for i in range (site):
+            mpo.A[i][:, :, 0, 0] = np.kron(pauli_Z, pauli_Z)
+            
+        mpo.A[site][:, :, 0, 0] = np.kron(bose_a, I2)
+        
+        for i in range (site + 1, L):
+            mpo.A[i][:, :, 0, 0] = I4
+
+    if spin == 1: #down
+        qD =  [np.array([0])] * (site+1) + [np.array([-qd[1]])] *(L-site)
+        mpo = MPO(qd, qD, fill= 0.)
+        
+        for i in range (site):
+            mpo.A[i][:, :, 0, 0] = np.kron(pauli_Z, pauli_Z)
+            
+        mpo.A[site][:, :, 0, 0] = np.kron(pauli_Z, bose_a)
+        
+        for i in range (site + 1, L):
+            mpo.A[i][:, :, 0, 0] = I4
+
+    return mpo
