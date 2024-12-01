@@ -42,6 +42,10 @@ def Krylov_time_evo_using_vecs_single_step(H, N_krylov, initial, dt)
 import numpy as np
 from numpy.linalg import norm
 import scipy.sparse.linalg as spla
+import copy
+from pytenet.operation_thc import apply_thc_mpo_and_compress, add_mps_and_compress
+from pytenet.operation import vdot, add_mps, operator_inner_product
+
 
 
 
@@ -103,6 +107,8 @@ def Krylov_evo_using_vecs_single_step(H, N_krylov, psi, dt):
     c1[0,0] = 1
     exp_TN = spla.expm(-1j*dt*TN)
     c_reduced = exp_TN@ c1
+    
+    #print(c_reduced)
 
     psi_evloved = np.zeros_like(psi, dtype=np.complex128)
 
@@ -118,4 +124,105 @@ def Krylov_time_evo_using_vecs(H, N_krylov, psi, n, T):
         psi = Krylov_evo_using_vecs_single_step(H, N_krylov, psi, dt)
         
     return psi
+
+def create_Krylov_space(N_Krylov, H_mu_nu_list_spin_layer, last_mps, trunc_tol, max_bond, r_THC):
+    
+    Krylov_space = []
+    
+    v0 = copy.deepcopy(last_mps)
+    v0.orthonormalize('left')
+    v0.orthonormalize('right')
+    Krylov_space.append(v0)
+    #print(v0.bond_dims)
+    
+    v1 = apply_thc_mpo_and_compress(H_mu_nu_list_spin_layer, copy.deepcopy(v0), trunc_tol, 2*max_bond, r_THC)
+    #v1 = apply_operator(H_mu_nu_list_spin_layer, copy.deepcopy(last_mps), trunc_tol, max_bond, r_THC)
+    #v1.orthonormalize('left')
+    #v1.orthonormalize('right')
+    temp = copy.deepcopy(v0)
+    temp.A[0] = -vdot(v1, temp)* temp.A[0]
+    v1 =  add_mps_and_compress(copy.deepcopy(v1), temp, trunc_tol, max_bond)
+    v1.orthonormalize('left')
+    v1.orthonormalize('right')
+    Krylov_space.append(v1)
+    #print(v1.bond_dims)
+    
+    for i in range(2, N_Krylov, 1):
         
+        v_i = apply_thc_mpo_and_compress(H_mu_nu_list_spin_layer, copy.deepcopy(Krylov_space[i-1]), trunc_tol, 2*max_bond, r_THC)
+        v_i.orthonormalize('left')
+        v_i.orthonormalize('right')
+        
+        temp1 = copy.deepcopy(Krylov_space[i-2])
+        temp1.A[0] = -vdot(v_i, temp1)* temp1.A[0]
+        v_i =  add_mps(copy.deepcopy(v_i), temp1)
+        #v_i.orthonormalize('left')
+        #v_i.orthonormalize('right')
+        
+        temp2 = copy.deepcopy(Krylov_space[i-1])
+        temp2.A[0] = -vdot(v_i, temp2)* temp2.A[0]
+        v_i =  add_mps_and_compress(copy.deepcopy(v_i), temp2, trunc_tol, max_bond)
+        v_i.orthonormalize('left')
+        v_i.orthonormalize('right')
+        #print(v_i.bond_dims)
+        Krylov_space.append(v_i)
+        
+        # print(vdot(Krylov_space[i], Krylov_space[i-1]))
+        # print(vdot(Krylov_space[i], Krylov_space[i-2]))
+        
+    return Krylov_space
+
+def Krylov_evo_using_built_mps_space(H_mpo, Krylov_mps_list, max_bond, dt):
+    
+    TN = np.zeros([len(Krylov_mps_list),len(Krylov_mps_list)])
+    for i in range (TN.shape[0]):
+        for j in range (TN.shape[1]):
+            if abs(i - j) < 2:
+                TN[i, j] = operator_inner_product(Krylov_mps_list[i], H_mpo, Krylov_mps_list[j])
+                
+    c1 = np.zeros([len(Krylov_mps_list), 1])
+    c1[0,0] = 1
+    exp_TN = spla.expm(-1j*dt*TN)
+    c_reduced = exp_TN@ c1
+
+    psi_evloved = copy.deepcopy(Krylov_mps_list[0])
+    psi_evloved.A[0] = c_reduced[0] *psi_evloved.A[0]
+
+    for i in range (1, len(Krylov_mps_list), 1):
+        temp = copy.deepcopy(Krylov_mps_list[i])
+        temp.A[0] = c_reduced[i] *temp.A[0]
+        psi_evloved = add_mps(psi_evloved, temp)
+    
+    psi_evloved.orthonormalize('right')
+    psi_evloved.orthonormalize('left')
+        
+    psi_evloved.compress_direct_svd_right_max_bond(0, max_bond)
+    psi_evloved.orthonormalize('right')
+    psi_evloved.orthonormalize('left')
+        
+    return psi_evloved  
+
+
+    
+def Krylov_evo_using_built_space(H, Krylov_vector_list, dt):
+    
+    TN = np.zeros([len(Krylov_vector_list),len(Krylov_vector_list)])
+    for i in range (TN.shape[0]):
+        for j in range (TN.shape[1]):
+            if abs(i - j) < 2:
+                TN[i, j] = np.vdot(Krylov_vector_list[i], H @Krylov_vector_list[j])
+                
+    c1 = np.zeros([len(Krylov_vector_list), 1])
+    c1[0,0] = 1
+    exp_TN = spla.expm(-1j*dt*TN)
+    c_reduced = exp_TN@ c1
+
+    psi_evloved = np.zeros_like(Krylov_vector_list[0], dtype=np.complex128)
+
+    for i in range (len(Krylov_vector_list)):
+        psi_evloved += c_reduced[i] * Krylov_vector_list[i]
+    
+    psi_evloved /= norm(psi_evloved)
+        
+    return psi_evloved   
+

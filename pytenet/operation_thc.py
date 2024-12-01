@@ -108,9 +108,10 @@ def apply_thc_mpo_and_compress(sub_H_list_as_layer, psi, trunc_tol, max_bond_glo
     #The last step: apply kinetic term on \psi, and add it to the summation.
     #H_on_psi = add_mps_and_compress_direct_SVD(H_on_psi, Kinetic_on_psi, trunc_tol, max_bond_global) 
     
-    Kinetic_on_psi = apply_operator_and_compress(sub_H_list_as_layer[-1][0], psi_original, trunc_tol, max_bond_global)                         
+    #Kinetic_on_psi = apply_operator_and_compress(sub_H_list_as_layer[-1][0], psi_original, trunc_tol, max_bond_global)
+    Kinetic_on_psi = apply_operator(sub_H_list_as_layer[-1][0], psi_original)                         
     H_on_psi = add_mps_and_compress(H_on_psi, Kinetic_on_psi, trunc_tol, max_bond_global) 
-     
+
     return (H_on_psi)
 
 
