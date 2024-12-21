@@ -560,3 +560,20 @@ def orthogonalize_to_target(ori_state, to_be_removed, max_bond):
     to_be_removed.A[0] = -vdot(to_be_removed, copy.deepcopy(ori_state))* to_be_removed.A[0]
     orthogonalized = add_mps_and_compress(copy.deepcopy(ori_state), to_be_removed, 0, max_bond)
     return (orthogonalized)
+
+def store_file(foldername, filename, temp):
+    
+    filename = foldername + filename
+    with open(filename, 'wb') as file:
+        pickle.dump(temp, file)
+        
+def load_file(foldername, filename):
+    
+    filename = foldername + filename
+    with open(filename, 'rb') as file:
+        temp = pickle.load(file)
+    return(temp)
+        
+        
+        
+   

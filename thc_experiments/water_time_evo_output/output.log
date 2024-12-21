@@ -1,0 +1,42 @@
+nohup: ignoring input
+7
+(7, 28)
+(28, 28)
+rl errV: 2.8386751875274264e-12
+abs errV: 2.0615721155266396e-11
+errt: 7.097049412242525e-13
+errh: 2.585427402664151e-13
+errht: 9.079449636842276e-14
+[1, 16, 58, 96, 96, 58, 16, 1]
+max_bond 30
+45
+/work_fast/ge49cag/pytenet_thc_spin_cons/thc_experiments/../pytenet/krylov_time_evo.py:181: ComplexWarning: Casting complex values to real discards the imaginary part
+  TN[i, j] = operator_inner_product(Krylov_mps_list[i], H_mpo, Krylov_mps_list[j])
+/work_fast/ge49cag/pytenet_thc_spin_cons/thc_experiments/../pytenet/krylov_time_evo.py:103: ComplexWarning: Casting complex values to real discards the imaginary part
+  TN[i, j] = np.vdot(Krylov_vector_list[i], H@Krylov_vector_list[j])
+30 45 0.022222222222222223
+trunc error 0.005485335262626463
+krylov error 7.495458978165315e-05
+total error 0.005484047221251555
+64
+30 64 0.015625
+trunc error 0.005426395595279813
+krylov error 2.622709924249386e-05
+total error 0.005425793609460414
+80
+30 80 0.0125
+trunc error 0.0054616653857281995
+krylov error 1.3458872974785823e-05
+total error 0.005461375529927116
+max_bond 35
+45
+35 45 0.022222222222222223
+trunc error 7.005414580963402e-05
+krylov error 7.495458978165315e-05
+total error 0.00010239015451244712
+64
+35 64 0.015625
+trunc error 7.511184955205083e-05
+krylov error 2.622709924249386e-05
+total error 7.961127926184738e-05
+80
